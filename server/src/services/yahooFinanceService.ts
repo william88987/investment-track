@@ -21,11 +21,11 @@ export class YahooFinanceService {
   // Cache for market data (5 minute cache)
   private static marketDataCache = new Map<string, { data: MarketData; timestamp: number }>();
   private static readonly CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
-  
+
   // Track last request time for rate limiting
   private static lastRequestTime = 0;
   private static readonly MIN_REQUEST_INTERVAL = 300; // 300ms between individual requests
-  
+
   // Yahoo Finance direct API (same as exchange rate service - more reliable)
   private static readonly YAHOO_CHART_API = 'https://query1.finance.yahoo.com/v8/finance/chart';
 
@@ -50,49 +50,51 @@ export class YahooFinanceService {
       this.lastRequestTime = Date.now();
 
       Logger.debug(`📊 Fetching Yahoo Finance data for ${symbol} using direct API...`);
-      
-      // Use direct chart API with 2 day range to get yesterday's close
-      const url = `${this.YAHOO_CHART_API}/${encodeURIComponent(symbol)}?interval=1d&range=2d`;
-      
+
+      // Use direct chart API with 5 day range to ensure we have enough data 
+      // to get the correct previous trading day's close (handles weekends, holidays)
+      const url = `${this.YAHOO_CHART_API}/${encodeURIComponent(symbol)}?interval=1d&range=5d`;
+
       const response = await fetch(url, {
         headers: {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
           'Accept': 'application/json',
         }
       });
-      
+
       if (!response.ok) {
         Logger.error(`❌ Yahoo Finance API request failed for ${symbol}: ${response.status} ${response.statusText}`);
         return null;
       }
-      
+
       const data = await response.json();
-      
+
       if (!data.chart || !data.chart.result || data.chart.result.length === 0) {
         Logger.debug(`❌ No data found for symbol ${symbol}`);
         return null;
       }
-      
+
       const result = data.chart.result[0];
       const meta = result.meta;
       const quotes = result.indicators?.quote?.[0];
       const closeArray = quotes?.close;
-      
+
       if (!meta) {
         Logger.debug(`❌ No meta data for symbol ${symbol}`);
         return null;
       }
-      
+
       // Get current price from meta
       const marketPrice = meta.regularMarketPrice || 0;
-      
-      // Get yesterday's close from the quote data (first element in 2-day range)
-      // The closeArray contains [yesterday's close, today's close/current]
-      // chartPreviousClose is the close at the START of the range (2 days ago), not yesterday!
+
+      // Get the previous trading day's close from the quote data
+      // closeArray contains closes for each trading day in the range, with the last element being today's current/close
+      // To get yesterday's close, we need the second-to-last element (closeArray[length - 2])
+      // This correctly handles weekends and holidays by using actual trading day data
       let previousClose = 0;
       if (closeArray && closeArray.length >= 2) {
-        // First element is yesterday's close
-        previousClose = closeArray[0] || 0;
+        // Get the second-to-last element which is the previous trading day's close
+        previousClose = closeArray[closeArray.length - 2] || 0;
       } else if (closeArray && closeArray.length === 1) {
         // Only one day of data, use chartPreviousClose as fallback
         previousClose = meta.chartPreviousClose || meta.previousClose || 0;
@@ -100,7 +102,7 @@ export class YahooFinanceService {
         // No quote data, use chartPreviousClose as fallback
         previousClose = meta.chartPreviousClose || meta.previousClose || 0;
       }
-      
+
       // Calculate day change
       const dayChange = previousClose > 0 ? marketPrice - previousClose : 0;
       const dayChangePercent = previousClose > 0 ? (dayChange / previousClose) * 100 : 0;
@@ -139,7 +141,7 @@ export class YahooFinanceService {
    */
   static async getMultipleMarketData(symbols: string[]): Promise<Map<string, MarketData>> {
     const results = new Map<string, MarketData>();
-    
+
     if (symbols.length === 0) return results;
 
     Logger.info(`📊 Fetching Yahoo Finance data for ${symbols.length} symbols using yahoo-finance2...`);
@@ -147,16 +149,16 @@ export class YahooFinanceService {
     // Process symbols in batches with delays to avoid rate limiting (429 errors)
     const batchSize = 5;
     const delayBetweenBatches = 2000; // 2 seconds between batches
-    
+
     for (let i = 0; i < symbols.length; i += batchSize) {
       const batch = symbols.slice(i, i + batchSize);
-      
+
       // Add delay between batches (except for the first batch)
       if (i > 0) {
         Logger.debug(`⏱️ Waiting ${delayBetweenBatches}ms before next batch to avoid rate limiting...`);
         await new Promise(resolve => setTimeout(resolve, delayBetweenBatches));
       }
-      
+
       // Process batch concurrently
       const batchPromises = batch.map(async (symbol) => {
         try {
@@ -168,7 +170,7 @@ export class YahooFinanceService {
           Logger.error(`❌ Failed to fetch data for ${symbol}:`, error);
         }
       });
-      
+
       await Promise.all(batchPromises);
       Logger.debug(`📊 Processed batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(symbols.length / batchSize)}`);
     }
@@ -183,23 +185,23 @@ export class YahooFinanceService {
   static async searchSymbols(query: string): Promise<Array<{ symbol: string; name: string; type: string; exchange: string }>> {
     try {
       Logger.debug(`🔍 Searching for symbols matching: ${query}`);
-      
+
       const url = `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(query)}&quotesCount=10&newsCount=0`;
-      
+
       const response = await fetch(url, {
         headers: {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
           'Accept': 'application/json',
         }
       });
-      
+
       if (!response.ok) {
         Logger.error(`❌ Yahoo Finance search failed: ${response.status}`);
         return [];
       }
-      
+
       const data = await response.json();
-      
+
       const results = data.quotes?.map((quote: any) => ({
         symbol: quote.symbol || '',
         name: quote.shortname || quote.longname || '',
