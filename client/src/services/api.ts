@@ -693,8 +693,11 @@ class ApiClient {
   }
 
   // AI Feedback endpoint
-  async getAIPortfolioFeedback() {
-    return this.request<{ feedback: string }>('/performance/ai-feedback');
+  async getAIPortfolioFeedback(data: { currencyBreakdown: any[]; categoryBreakdown: any[] }) {
+    return this.request<{ feedback: string }>('/performance/ai-feedback', {
+      method: 'POST',
+      body: JSON.stringify(data)
+    });
   }
 }
 

@@ -165,7 +165,7 @@ router.get('/scheduler-status', async (req: AuthenticatedRequest, res) => {
 });
 
 // Get AI feedback on performance and assets
-router.get('/ai-feedback', async (req: AuthenticatedRequest, res) => {
+router.post('/ai-feedback', async (req: AuthenticatedRequest, res) => {
   try {
     const userId = req.user?.id || 0;
     const apiKey = process.env.MINIMAX_API_KEY;
@@ -176,6 +176,8 @@ router.get('/ai-feedback', async (req: AuthenticatedRequest, res) => {
         feedback: "MiniMax AI feedback is currently unavailable because the `MINIMAX_API_KEY` is not set in the server's `.env` file. Please add your key to enable automated financial insights." 
       });
     }
+
+    const { currencyBreakdown, categoryBreakdown } = req.body;
 
     // Fetch last 30 days of performance data
     const performanceData = await PerformanceModel.findByUserId(userId, 30);
@@ -195,10 +197,31 @@ router.get('/ai-feedback', async (req: AuthenticatedRequest, res) => {
       `- Date: ${s.date} | Investment: ${s.investmentTotal} | Bank: ${s.bankTotal} | Other: ${s.otherTotal} | Total: ${s.total}`
     ).join('\n');
 
+    // Format breakdowns
+    let formattedCurrency = 'No current currency distribution data available.';
+    if (Array.isArray(currencyBreakdown) && currencyBreakdown.length > 0) {
+      formattedCurrency = currencyBreakdown.map((item: any) =>
+        `- Currency: ${item.currency} | Value (Base): ${Number(item.valueHKD || item.value || 0).toFixed(2)} | Share: ${Number(item.percentage || 0).toFixed(2)}%`
+      ).join('\n');
+    }
+
+    let formattedCategory = 'No current category distribution data available.';
+    if (Array.isArray(categoryBreakdown) && categoryBreakdown.length > 0) {
+      formattedCategory = categoryBreakdown.map((item: any) =>
+        `- Category: ${item.label || item.category} | Value (Base): ${Number(item.value || 0).toFixed(2)} | Share: ${Number(item.percentage || 0).toFixed(2)}%`
+      ).join('\n');
+    }
+
     const prompt = `You are a professional financial advisor analyzing the user's investment portfolio. 
 Based on the financial data provided below, analyze: "${envPrompt}"
 
 Format your response in Markdown, using clean headers, bullet points, and highlight trends clearly. Keep it concise, helpful, and under 250 words.
+
+--- CURRENT ASSET ALLOCATION BY CATEGORY ---
+${formattedCategory}
+
+--- CURRENT CURRENCY EXPOSURE ---
+${formattedCurrency}
 
 --- PERFORMANCE HISTORY (PAST 30 ENTRIES) ---
 ${formattedPerformance || 'No performance history records available.'}
@@ -220,7 +243,10 @@ ${formattedSnapshots || 'No total assets history snapshots available.'}
       }
     });
 
-    const content = response.data?.choices?.[0]?.message?.content || 'No insights could be generated at this time.';
+    let content = response.data?.choices?.[0]?.message?.content || 'No insights could be generated at this time.';
+
+    // Clean thinking process tags (e.g. <think>...</think>) from the MiniMax output
+    content = content.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
 
     return res.json({ feedback: content });
   } catch (error) {

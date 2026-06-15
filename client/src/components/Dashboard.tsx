@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -115,6 +115,7 @@ const Dashboard = ({ onLogout, sidebarOpen, onSidebarToggle }: DashboardProps) =
   });
   const [aiFeedback, setAiFeedback] = useState<string>("");
   const [isLoadingAIFeedback, setIsLoadingAIFeedback] = useState(false);
+  const breakdownsRef = useRef({ currencyBreakdown: [] as any[], categoryBreakdown: [] as any[] });
   // Load QQQ holdings on mount
   useEffect(() => {
     const loadQQQ = async () => {
@@ -474,7 +475,11 @@ const Dashboard = ({ onLogout, sidebarOpen, onSidebarToggle }: DashboardProps) =
   const fetchAIFeedback = async () => {
     setIsLoadingAIFeedback(true);
     try {
-      const response = await apiClient.getAIPortfolioFeedback();
+      const { currencyBreakdown, categoryBreakdown } = breakdownsRef.current;
+      const response = await apiClient.getAIPortfolioFeedback({
+        currencyBreakdown,
+        categoryBreakdown
+      });
       if (response.data?.feedback) {
         setAiFeedback(response.data.feedback);
       } else if (response.error) {
@@ -496,44 +501,6 @@ const Dashboard = ({ onLogout, sidebarOpen, onSidebarToggle }: DashboardProps) =
     }
   };
 
-  // Helper to render basic markdown formatting to JSX
-  const renderMarkdown = (text: string) => {
-    if (!text) return null;
-    
-    return text.split('\n').map((line, idx) => {
-      const trimmed = line.trim();
-      
-      // Headers
-      if (trimmed.startsWith('###')) {
-        return <h4 key={idx} className="text-base font-bold text-foreground mt-3 mb-1">{trimmed.replace(/^###\s*/, '')}</h4>;
-      }
-      if (trimmed.startsWith('##')) {
-        return <h3 key={idx} className="text-lg font-bold text-foreground mt-4 mb-2">{trimmed.replace(/^##\s*/, '')}</h3>;
-      }
-      if (trimmed.startsWith('#')) {
-        return <h2 key={idx} className="text-xl font-bold text-foreground mt-4 mb-2">{trimmed.replace(/^#\s*/, '')}</h2>;
-      }
-      
-      // Bullet points
-      if (trimmed.startsWith('-') || trimmed.startsWith('*')) {
-        const content = trimmed.replace(/^[-*]\s*/, '');
-        return (
-          <ul key={idx} className="list-disc pl-5 my-1 text-sm text-muted-foreground">
-            <li>{parseBoldText(content)}</li>
-          </ul>
-        );
-      }
-      
-      // Blank lines
-      if (trimmed === '') {
-        return <div key={idx} className="h-2" />;
-      }
-      
-      // Regular paragraphs
-      return <p key={idx} className="text-sm text-muted-foreground my-1.5 leading-relaxed">{parseBoldText(trimmed)}</p>;
-    });
-  };
-
   const parseBoldText = (text: string) => {
     const parts = text.split(/(\*\*.*?\*\*)/g);
     return parts.map((part, i) => {
@@ -542,6 +509,149 @@ const Dashboard = ({ onLogout, sidebarOpen, onSidebarToggle }: DashboardProps) =
       }
       return part;
     });
+  };
+
+  const renderTableBlock = (tableLines: string[], keyIndex: number) => {
+    // Parse rows by splitting by '|'
+    const parsedRows = tableLines.map(row => {
+      const parts = row.split('|');
+      // A line like "| A | B |" returns ["", " A ", " B ", ""]
+      return parts.slice(1, parts.length - 1).map(c => c.trim());
+    });
+
+    // Filter out separator lines like | --- | --- |
+    const filteredRows = parsedRows.filter(row => {
+      if (row.length === 0) return false;
+      return !row.every(cell => /^[ \t\:\-]+$/.test(cell) && cell.includes('-'));
+    });
+
+    if (filteredRows.length === 0) return null;
+
+    const headerRow = filteredRows[0];
+    const bodyRows = filteredRows.slice(1);
+
+    return (
+      <div key={`table-container-${keyIndex}`} className="overflow-x-auto my-4 rounded-xl border border-border bg-card/50 shadow-sm">
+        <table className="min-w-full divide-y divide-border text-sm">
+          <thead className="bg-muted/80">
+            <tr>
+              {headerRow.map((cell, idx) => (
+                <th
+                  key={idx}
+                  className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground"
+                >
+                  {parseBoldText(cell)}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border/60">
+            {bodyRows.map((row, rowIdx) => (
+              <tr key={rowIdx} className="hover:bg-muted/40 transition-colors">
+                {row.map((cell, cellIdx) => (
+                  <td key={cellIdx} className="px-4 py-2.5 text-muted-foreground align-middle">
+                    {parseBoldText(cell)}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    );
+  };
+
+  // Helper to render markdown formatting to JSX (handles tables, headers, lists, paragraphs)
+  const renderMarkdown = (text: string) => {
+    if (!text) return null;
+    
+    // Clean any thinking process tags from the MiniMax output (client-side backup)
+    const cleanText = text.replace(/<think>[\s\S]*?(?:<\/think>|$)/gi, '').trim();
+    
+    const lines = cleanText.split('\n');
+    const elements: React.ReactNode[] = [];
+    
+    let i = 0;
+    while (i < lines.length) {
+      const line = lines[i];
+      const trimmed = line.trim();
+
+      // 1. Table block
+      if (trimmed.startsWith('|')) {
+        const tableLines: string[] = [];
+        while (i < lines.length && lines[i].trim().startsWith('|')) {
+          tableLines.push(lines[i]);
+          i++;
+        }
+        if (tableLines.length > 0) {
+          elements.push(renderTableBlock(tableLines, i));
+        }
+        continue;
+      }
+
+      // 2. Headers
+      if (trimmed.startsWith('###')) {
+        elements.push(
+          <h4 key={`h4-${i}`} className="text-base font-bold text-foreground mt-4 mb-2">
+            {parseBoldText(trimmed.replace(/^###\s*/, ''))}
+          </h4>
+        );
+        i++;
+        continue;
+      }
+      if (trimmed.startsWith('##')) {
+        elements.push(
+          <h3 key={`h3-${i}`} className="text-lg font-bold text-foreground mt-5 mb-2.5 border-b border-border pb-1">
+            {parseBoldText(trimmed.replace(/^##\s*/, ''))}
+          </h3>
+        );
+        i++;
+        continue;
+      }
+      if (trimmed.startsWith('#')) {
+        elements.push(
+          <h2 key={`h2-${i}`} className="text-xl font-bold text-foreground mt-6 mb-3">
+            {parseBoldText(trimmed.replace(/^#\s*/, ''))}
+          </h2>
+        );
+        i++;
+        continue;
+      }
+
+      // 3. Bullet points
+      if (trimmed.startsWith('-') || trimmed.startsWith('*')) {
+        const listItems: string[] = [];
+        while (i < lines.length && (lines[i].trim().startsWith('-') || lines[i].trim().startsWith('*'))) {
+          listItems.push(lines[i].trim().replace(/^[-*]\s*/, ''));
+          i++;
+        }
+        elements.push(
+          <ul key={`ul-${i}`} className="list-disc pl-5 my-2 text-sm text-muted-foreground space-y-1">
+            {listItems.map((item, idx) => (
+              <li key={idx}>{parseBoldText(item)}</li>
+            ))}
+          </ul>
+        );
+        continue;
+      }
+
+      // 4. Blank lines
+      if (trimmed === '') {
+        elements.push(<div key={`space-${i}`} className="h-2" />);
+        i++;
+        continue;
+      }
+
+      // 5. Regular paragraphs
+      elements.push(
+        <p key={`p-${i}`} className="text-sm text-muted-foreground my-1.5 leading-relaxed">
+          {parseBoldText(trimmed)}
+        </p>
+      );
+      i++;
+    }
+
+    return elements;
   };
 
   // Reset page when performance data or days filter changes
@@ -1780,6 +1890,12 @@ const Dashboard = ({ onLogout, sidebarOpen, onSidebarToggle }: DashboardProps) =
       "#ff7300",
       "#00ff00"
     ];
+
+    // Save current breakdowns to ref for AI feedback
+    breakdownsRef.current = {
+      currencyBreakdown: currencyChartData,
+      categoryBreakdown: portfolioChartData
+    };
 
     return (
       <div className="space-y-6">
