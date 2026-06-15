@@ -1652,152 +1652,266 @@ const Dashboard = ({ onLogout, sidebarOpen, onSidebarToggle }: DashboardProps) =
             </div>
           </CardHeader>
           <CardContent className="p-2 md:p-6">
-            <ChartContainer config={chartConfig} className="h-[250px] md:h-[400px] w-full" key={`chart-${performanceDays}-${chartData.length}`}>
-              <LineChart
-                data={chartData}
-                margin={{
-                  top: 10,
-                  right: 5,
-                  left: 0,
-                  bottom: 10
-                }}
-              >
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.3} />
-                <XAxis
-                  dataKey="date"
-                  type="category"
-                  tickFormatter={(value, index) => {
-                    // Handle date string properly - value should already be in YYYY-MM-DD format
-                    if (!value) return '';
-
-                    try {
-                      // Parse the date string (YYYY-MM-DD format)
-                      const date = new Date(value);
-
-                      // Check if date is valid
-                      if (isNaN(date.getTime())) {
-                        return value; // Return original value if parsing fails
-                      }
-
-                      // Show fewer ticks to avoid overcrowding
-                      const shouldShow = index === 0 || index === Math.floor(chartData.length / 2) || index === chartData.length - 1;
-                      if (!shouldShow) return '';
-
-                      return window.innerWidth < 768
-                        ? date.toLocaleDateString('en-US', { month: 'numeric', day: 'numeric' })
-                        : date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-                    } catch (error) {
-                      return value; // Return original value if there's an error
-                    }
-                  }}
-                  fontSize={10}
-                  tickMargin={5}
-                  interval={0}
-                  axisLine={false}
-                  tickLine={false}
-                />
-                <YAxis
-                  tickFormatter={(value) => {
-                    return value.toLocaleString('en-US', {
-                      minimumFractionDigits: 0,
-                      maximumFractionDigits: 0
-                    });
-                  }}
-                  fontSize={10}
-                  tickMargin={5}
-                  width={window.innerWidth < 768 ? 80 : 120}
-                  axisLine={false}
-                  tickLine={false}
-                />
-                <ChartTooltip
-                  content={({ active, payload, label }) => {
-                    if (active && payload && payload.length) {
-                      return (
-                        <div className="bg-background border border-border rounded-lg p-2 shadow-lg max-w-[280px] md:max-w-xs">
-                          <p className="font-medium text-foreground mb-1 text-[10px] md:text-xs">
-                            {(() => {
-                              try {
-                                const date = new Date(label);
-                                if (isNaN(date.getTime())) {
-                                  return label; // Return original if invalid
-                                }
-                                return date.toLocaleDateString('en-US', {
-                                  month: 'short',
-                                  day: 'numeric',
-                                  year: window.innerWidth < 768 ? undefined : 'numeric'
-                                });
-                              } catch (error) {
-                                return label; // Return original if error
-                              }
-                            })()}
-                          </p>
-                          <div className="space-y-0.5">
-                            {payload.map((entry, index) => (
-                              <div key={index} className="flex items-center gap-1">
-                                <div
-                                  className="w-2 h-2 rounded-sm flex-shrink-0"
-                                  style={{ backgroundColor: entry.color }}
-                                />
-                                <span className="text-[10px] md:text-xs text-muted-foreground truncate max-w-[80px] md:max-w-none">
-                                  {chartConfig[entry.dataKey as keyof typeof chartConfig]?.label}:
-                                </span>
-                                <span className="text-[10px] md:text-xs font-medium text-foreground ml-auto">
-                                  {(() => {
-                                    const value = entry.value as number;
-                                    return value.toLocaleString('en-US', {
-                                      minimumFractionDigits: 0,
-                                      maximumFractionDigits: 2
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Left Chart: Total & Investment P&L */}
+              <div className="flex flex-col gap-2">
+                <div className="px-2">
+                  <h4 className="text-sm font-semibold text-foreground">Total & Investment P&L</h4>
+                  <p className="text-xs text-muted-foreground">Cumulative overall return vs asset-only return</p>
+                </div>
+                <ChartContainer config={chartConfig} className="h-[250px] md:h-[350px] w-full" key={`chart-total-investment-${performanceDays}-${chartData.length}`}>
+                  <LineChart
+                    data={chartData}
+                    margin={{
+                      top: 10,
+                      right: 5,
+                      left: 0,
+                      bottom: 10
+                    }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.3} />
+                    <XAxis
+                      dataKey="date"
+                      type="category"
+                      tickFormatter={(value, index) => {
+                        if (!value) return '';
+                        try {
+                          const date = new Date(value);
+                          if (isNaN(date.getTime())) {
+                            return value;
+                          }
+                          const shouldShow = index === 0 || index === Math.floor(chartData.length / 2) || index === chartData.length - 1;
+                          if (!shouldShow) return '';
+                          return window.innerWidth < 768
+                            ? date.toLocaleDateString('en-US', { month: 'numeric', day: 'numeric' })
+                            : date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                        } catch (error) {
+                          return value;
+                        }
+                      }}
+                      fontSize={10}
+                      tickMargin={5}
+                      interval={0}
+                      axisLine={false}
+                      tickLine={false}
+                    />
+                    <YAxis
+                      tickFormatter={(value) => {
+                        return value.toLocaleString('en-US', {
+                          minimumFractionDigits: 0,
+                          maximumFractionDigits: 0
+                        });
+                      }}
+                      fontSize={10}
+                      tickMargin={5}
+                      width={window.innerWidth < 768 ? 60 : 90}
+                      axisLine={false}
+                      tickLine={false}
+                    />
+                    <ChartTooltip
+                      content={({ active, payload, label }) => {
+                        if (active && payload && payload.length) {
+                          return (
+                            <div className="bg-background border border-border rounded-lg p-2 shadow-lg max-w-[280px] md:max-w-xs">
+                              <p className="font-medium text-foreground mb-1 text-[10px] md:text-xs">
+                                {(() => {
+                                  try {
+                                    const date = new Date(label);
+                                    if (isNaN(date.getTime())) {
+                                      return label;
+                                    }
+                                    return date.toLocaleDateString('en-US', {
+                                      month: 'short',
+                                      day: 'numeric',
+                                      year: window.innerWidth < 768 ? undefined : 'numeric'
                                     });
-                                  })()}
-                                </span>
+                                  } catch (error) {
+                                    return label;
+                                  }
+                                })()}
+                              </p>
+                              <div className="space-y-0.5">
+                                {payload.map((entry, index) => (
+                                  <div key={index} className="flex items-center gap-1">
+                                    <div
+                                      className="w-2 h-2 rounded-sm flex-shrink-0"
+                                      style={{ backgroundColor: entry.color }}
+                                    />
+                                    <span className="text-[10px] md:text-xs text-muted-foreground truncate max-w-[120px] md:max-w-none">
+                                      {chartConfig[entry.dataKey as keyof typeof chartConfig]?.label}:
+                                    </span>
+                                    <span className="text-[10px] md:text-xs font-medium text-foreground ml-auto">
+                                      {(() => {
+                                        const value = entry.value as number;
+                                        return value.toLocaleString('en-US', {
+                                          minimumFractionDigits: 0,
+                                          maximumFractionDigits: 2
+                                        });
+                                      })()}
+                                    </span>
+                                  </div>
+                                ))}
                               </div>
-                            ))}
-                          </div>
-                        </div>
-                      );
-                    }
-                    return null;
-                  }}
-                />
-                <ChartLegend
-                  content={<ChartLegendContent className="text-[10px] md:text-xs flex-wrap" />}
-                  wrapperStyle={{ paddingTop: '10px' }}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="totalPL"
-                  stroke="var(--color-totalPL)"
-                  strokeWidth={window.innerWidth < 768 ? 1.5 : 2}
-                  dot={{ r: window.innerWidth < 768 ? 2 : 3, fill: "var(--color-totalPL)" }}
-                  activeDot={{ r: window.innerWidth < 768 ? 3 : 4, stroke: "var(--color-totalPL)", strokeWidth: 2 }}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="investmentPL"
-                  stroke="var(--color-investmentPL)"
-                  strokeWidth={window.innerWidth < 768 ? 1.5 : 2}
-                  dot={{ r: window.innerWidth < 768 ? 1.5 : 2, fill: "var(--color-investmentPL)" }}
-                  activeDot={{ r: window.innerWidth < 768 ? 2.5 : 3, stroke: "var(--color-investmentPL)", strokeWidth: 2 }}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="currencyPL"
-                  stroke="var(--color-currencyPL)"
-                  strokeWidth={window.innerWidth < 768 ? 1.5 : 2}
-                  dot={{ r: window.innerWidth < 768 ? 1.5 : 2, fill: "var(--color-currencyPL)" }}
-                  activeDot={{ r: window.innerWidth < 768 ? 2.5 : 3, stroke: "var(--color-currencyPL)", strokeWidth: 2 }}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="dailyPL"
-                  stroke="var(--color-dailyPL)"
-                  strokeWidth={window.innerWidth < 768 ? 1.5 : 2}
-                  dot={{ r: window.innerWidth < 768 ? 1.5 : 2, fill: "var(--color-dailyPL)" }}
-                  activeDot={{ r: window.innerWidth < 768 ? 2.5 : 3, stroke: "var(--color-dailyPL)", strokeWidth: 2 }}
-                  strokeDasharray="3 3"
-                />
-              </LineChart>
-            </ChartContainer>
+                            </div>
+                          );
+                        }
+                        return null;
+                      }}
+                    />
+                    <ChartLegend
+                      content={<ChartLegendContent className="text-[10px] md:text-xs flex-wrap" />}
+                      wrapperStyle={{ paddingTop: '10px' }}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="totalPL"
+                      stroke="var(--color-totalPL)"
+                      strokeWidth={window.innerWidth < 768 ? 1.5 : 2}
+                      dot={{ r: window.innerWidth < 768 ? 2 : 3, fill: "var(--color-totalPL)" }}
+                      activeDot={{ r: window.innerWidth < 768 ? 3 : 4, stroke: "var(--color-totalPL)", strokeWidth: 2 }}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="investmentPL"
+                      stroke="var(--color-investmentPL)"
+                      strokeWidth={window.innerWidth < 768 ? 1.5 : 2}
+                      dot={{ r: window.innerWidth < 768 ? 1.5 : 2, fill: "var(--color-investmentPL)" }}
+                      activeDot={{ r: window.innerWidth < 768 ? 2.5 : 3, stroke: "var(--color-investmentPL)", strokeWidth: 2 }}
+                    />
+                  </LineChart>
+                </ChartContainer>
+              </div>
+
+              {/* Right Chart: Currency & Daily P&L */}
+              <div className="flex flex-col gap-2">
+                <div className="px-2">
+                  <h4 className="text-sm font-semibold text-foreground">Currency & Daily P&L</h4>
+                  <p className="text-xs text-muted-foreground">Cumulative FX return vs daily short-term P&L</p>
+                </div>
+                <ChartContainer config={chartConfig} className="h-[250px] md:h-[350px] w-full" key={`chart-currency-daily-${performanceDays}-${chartData.length}`}>
+                  <LineChart
+                    data={chartData}
+                    margin={{
+                      top: 10,
+                      right: 5,
+                      left: 0,
+                      bottom: 10
+                    }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.3} />
+                    <XAxis
+                      dataKey="date"
+                      type="category"
+                      tickFormatter={(value, index) => {
+                        if (!value) return '';
+                        try {
+                          const date = new Date(value);
+                          if (isNaN(date.getTime())) {
+                            return value;
+                          }
+                          const shouldShow = index === 0 || index === Math.floor(chartData.length / 2) || index === chartData.length - 1;
+                          if (!shouldShow) return '';
+                          return window.innerWidth < 768
+                            ? date.toLocaleDateString('en-US', { month: 'numeric', day: 'numeric' })
+                            : date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                        } catch (error) {
+                          return value;
+                        }
+                      }}
+                      fontSize={10}
+                      tickMargin={5}
+                      interval={0}
+                      axisLine={false}
+                      tickLine={false}
+                    />
+                    <YAxis
+                      tickFormatter={(value) => {
+                        return value.toLocaleString('en-US', {
+                          minimumFractionDigits: 0,
+                          maximumFractionDigits: 0
+                        });
+                      }}
+                      fontSize={10}
+                      tickMargin={5}
+                      width={window.innerWidth < 768 ? 60 : 90}
+                      axisLine={false}
+                      tickLine={false}
+                    />
+                    <ChartTooltip
+                      content={({ active, payload, label }) => {
+                        if (active && payload && payload.length) {
+                          return (
+                            <div className="bg-background border border-border rounded-lg p-2 shadow-lg max-w-[280px] md:max-w-xs">
+                              <p className="font-medium text-foreground mb-1 text-[10px] md:text-xs">
+                                {(() => {
+                                  try {
+                                    const date = new Date(label);
+                                    if (isNaN(date.getTime())) {
+                                      return label;
+                                    }
+                                    return date.toLocaleDateString('en-US', {
+                                      month: 'short',
+                                      day: 'numeric',
+                                      year: window.innerWidth < 768 ? undefined : 'numeric'
+                                    });
+                                  } catch (error) {
+                                    return label;
+                                  }
+                                })()}
+                              </p>
+                              <div className="space-y-0.5">
+                                {payload.map((entry, index) => (
+                                  <div key={index} className="flex items-center gap-1">
+                                    <div
+                                      className="w-2 h-2 rounded-sm flex-shrink-0"
+                                      style={{ backgroundColor: entry.color }}
+                                    />
+                                    <span className="text-[10px] md:text-xs text-muted-foreground truncate max-w-[120px] md:max-w-none">
+                                      {chartConfig[entry.dataKey as keyof typeof chartConfig]?.label}:
+                                    </span>
+                                    <span className="text-[10px] md:text-xs font-medium text-foreground ml-auto">
+                                      {(() => {
+                                        const value = entry.value as number;
+                                        return value.toLocaleString('en-US', {
+                                          minimumFractionDigits: 0,
+                                          maximumFractionDigits: 2
+                                        });
+                                      })()}
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          );
+                        }
+                        return null;
+                      }}
+                    />
+                    <ChartLegend
+                      content={<ChartLegendContent className="text-[10px] md:text-xs flex-wrap" />}
+                      wrapperStyle={{ paddingTop: '10px' }}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="currencyPL"
+                      stroke="var(--color-currencyPL)"
+                      strokeWidth={window.innerWidth < 768 ? 1.5 : 2}
+                      dot={{ r: window.innerWidth < 768 ? 1.5 : 2, fill: "var(--color-currencyPL)" }}
+                      activeDot={{ r: window.innerWidth < 768 ? 2.5 : 3, stroke: "var(--color-currencyPL)", strokeWidth: 2 }}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="dailyPL"
+                      stroke="var(--color-dailyPL)"
+                      strokeWidth={window.innerWidth < 768 ? 1.5 : 2}
+                      dot={{ r: window.innerWidth < 768 ? 1.5 : 2, fill: "var(--color-dailyPL)" }}
+                      activeDot={{ r: window.innerWidth < 768 ? 2.5 : 3, stroke: "var(--color-dailyPL)", strokeWidth: 2 }}
+                      strokeDasharray="3 3"
+                    />
+                  </LineChart>
+                </ChartContainer>
+              </div>
+            </div>
           </CardContent>
           {showPerformanceDetails && (
             <CardContent className="pt-0 pb-4 md:pb-6">
