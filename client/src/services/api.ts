@@ -667,6 +667,30 @@ class ApiClient {
   async getQQQHoldings() {
     return this.request<string[]>('/market/qqq');
   }
+
+  // Total Assets History endpoints
+  async getTotalAssetsHistory() {
+    return this.request<any[]>('/total-assets-history');
+  }
+
+  async createTotalAssetsHistoryRecord(data: {
+    date: string;
+    investmentTotal: number;
+    bankTotal: number;
+    otherTotal: number;
+    total: number;
+  }) {
+    return this.request<any>('/total-assets-history', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteTotalAssetsHistoryRecord(id: number) {
+    return this.request<{ message: string }>(`/total-assets-history/${id}`, {
+      method: 'DELETE',
+    });
+  }
 }
 
 export const apiClient = new ApiClient(API_BASE_URL);

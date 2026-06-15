@@ -35,6 +35,7 @@ import manualInvestmentRoutes from './routes/manualInvestments.js';
 import otherAssetsRoutes from './routes/otherAssets.js';
 import schwabRoutes from './routes/schwab.js';
 import marketRoutes from './routes/market.js';
+import totalAssetsHistoryRoutes from './routes/totalAssetsHistory.js';
 import { SchedulerService } from './services/schedulerService.js';
 import { IBServiceOptimized } from './services/ibServiceOptimized.js';
 import { OtherPortfolioService } from './services/otherPortfolioService.js';
@@ -108,6 +109,7 @@ app.use('/api/manual-investments', manualInvestmentRoutes);
 app.use('/api/other-assets', otherAssetsRoutes);
 app.use('/api/schwab', schwabRoutes);
 app.use('/api/market', marketRoutes);
+app.use('/api/total-assets-history', totalAssetsHistoryRoutes);
 
 // Serve static files from client build (both development and production)
 const clientBuildPath = path.join(__dirname, '../../client/dist');

@@ -106,6 +106,13 @@ const Dashboard = ({ onLogout, sidebarOpen, onSidebarToggle }: DashboardProps) =
   const [qqqPositions, setQqqPositions] = useState<any[]>([]);
   const [isQQQTableExpanded, setIsQQQTableExpanded] = useState(false);
   const [qqqSortConfig, setQqqSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' }>({ key: 'pnlBase', direction: 'desc' });
+  const [totalAssetsHistory, setTotalAssetsHistory] = useState<any[]>([]);
+  const [isLoadingTotalAssetsHistory, setIsLoadingTotalAssetsHistory] = useState(false);
+  const [isRecordingSnapshot, setIsRecordingSnapshot] = useState(false);
+  const [showTotalAssetsHistory, setShowTotalAssetsHistory] = useState(() => {
+    const saved = localStorage.getItem('show-total-assets-history');
+    return saved === 'true';
+  });
 
   // Load QQQ holdings on mount
   useEffect(() => {
@@ -295,7 +302,8 @@ const Dashboard = ({ onLogout, sidebarOpen, onSidebarToggle }: DashboardProps) =
         loadOtherAssets(),
         loadOtherPortfolio(),
         loadOtherCashBalances(),
-        loadIntegratedAccountsData()
+        loadIntegratedAccountsData(),
+        loadTotalAssetsHistory()
       ]);
 
       // Calculate performance snapshot after all data is loaded
@@ -408,6 +416,55 @@ const Dashboard = ({ onLogout, sidebarOpen, onSidebarToggle }: DashboardProps) =
 
   // Note: updateTodaysPerformanceData() is now only called manually when needed
   // to avoid overriding correct performance data on refresh
+
+  // Load total assets history from API
+  const loadTotalAssetsHistory = async () => {
+    try {
+      setIsLoadingTotalAssetsHistory(true);
+      const response = await apiClient.getTotalAssetsHistory();
+      if (response.data) {
+        setTotalAssetsHistory(response.data);
+      }
+    } catch (error) {
+      console.error('Error loading total assets history:', error);
+    } finally {
+      setIsLoadingTotalAssetsHistory(false);
+    }
+  };
+
+  // Delete a total assets snapshot record
+  const deleteTotalAssetsSnapshot = async (id: number) => {
+    try {
+      const response = await apiClient.deleteTotalAssetsHistoryRecord(id);
+      if (response.error) {
+        toast({
+          title: "Error",
+          description: response.error || "Failed to delete snapshot",
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: "Success",
+          description: "Snapshot deleted successfully",
+        });
+        await loadTotalAssetsHistory();
+      }
+    } catch (error) {
+      console.error('Error deleting snapshot:', error);
+      toast({
+        title: "Error",
+        description: "Failed to delete snapshot",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Toggle total assets history visibility
+  const toggleTotalAssetsHistory = () => {
+    const nextVal = !showTotalAssetsHistory;
+    setShowTotalAssetsHistory(nextVal);
+    localStorage.setItem('show-total-assets-history', nextVal.toString());
+  };
 
   // Reset page when performance data or days filter changes
   useEffect(() => {
@@ -1001,6 +1058,42 @@ const Dashboard = ({ onLogout, sidebarOpen, onSidebarToggle }: DashboardProps) =
     );
 
     const totalAssetsValue = investmentAccountsValue + bankAccountsValue + otherAssetsValue;
+
+    const recordTotalAssetsSnapshot = async () => {
+      try {
+        setIsRecordingSnapshot(true);
+        const todayStr = new Date().toISOString().split('T')[0];
+        const response = await apiClient.createTotalAssetsHistoryRecord({
+          date: todayStr,
+          investmentTotal: investmentAccountsValue,
+          bankTotal: bankAccountsValue,
+          otherTotal: otherAssetsValue,
+          total: totalAssetsValue
+        });
+        if (response.error) {
+          toast({
+            title: "Error",
+            description: response.error || "Failed to record total assets snapshot",
+            variant: "destructive",
+          });
+        } else {
+          toast({
+            title: "Success",
+            description: "Total assets snapshot recorded successfully",
+          });
+          await loadTotalAssetsHistory();
+        }
+      } catch (error) {
+        console.error('Error recording total assets snapshot:', error);
+        toast({
+          title: "Error",
+          description: "Failed to record total assets snapshot",
+          variant: "destructive",
+        });
+      } finally {
+        setIsRecordingSnapshot(false);
+      }
+    };
 
     // Generate Portfolio Analytics CSV Log
     const generatePortfolioAnalyticsCSV = () => {
@@ -2119,9 +2212,35 @@ const Dashboard = ({ onLogout, sidebarOpen, onSidebarToggle }: DashboardProps) =
 
         {/* Total Assets Breakdown */}
         <Card className="bg-gradient-card border-border shadow-card">
-          <CardHeader>
-            <CardTitle className="text-foreground">Total Assets</CardTitle>
-            <CardDescription>Complete asset portfolio breakdown</CardDescription>
+          <CardHeader className="flex flex-row items-center justify-between pb-2 flex-wrap gap-2">
+            <div>
+              <CardTitle className="text-foreground">Total Assets</CardTitle>
+              <CardDescription>Complete asset portfolio breakdown</CardDescription>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="border-primary text-primary hover:bg-primary/10 flex items-center gap-1.5"
+                onClick={recordTotalAssetsSnapshot}
+                disabled={isRecordingSnapshot}
+              >
+                {isRecordingSnapshot ? (
+                  <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <PlusCircle className="h-3.5 w-3.5" />
+                )}
+                <span>Record Snapshot</span>
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="border-muted-foreground/30 text-muted-foreground hover:bg-muted/10 flex items-center gap-1.5"
+                onClick={toggleTotalAssetsHistory}
+              >
+                {showTotalAssetsHistory ? 'Hide History' : 'View History'}
+              </Button>
+            </div>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex items-center justify-end p-4 bg-background/30 rounded-lg">
@@ -2185,6 +2304,77 @@ const Dashboard = ({ onLogout, sidebarOpen, onSidebarToggle }: DashboardProps) =
             </div>
           </CardContent>
         </Card>
+
+        {/* Total Assets History Card */}
+        {showTotalAssetsHistory && (
+          <Card className="bg-gradient-card border-border shadow-card mt-4">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-foreground">Total Assets History</CardTitle>
+              <CardDescription>Historical record of asset breakdown snapshots</CardDescription>
+            </CardHeader>
+            <CardContent className="p-2 md:p-6 pt-0">
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs md:text-sm">
+                  <thead>
+                    <tr className="text-muted-foreground text-left border-b border-border/50">
+                      <th className="py-2 pr-3">Date</th>
+                      <th className="py-2 pr-3 text-right">Investment Accounts</th>
+                      <th className="py-2 pr-3 text-right">Bank Accounts</th>
+                      <th className="py-2 pr-3 text-right">Other Assets</th>
+                      <th className="py-2 pr-3 text-right font-bold">Total Assets</th>
+                      <th className="py-2 pl-3 text-center">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {totalAssetsHistory.map((row) => (
+                      <tr key={row.id} className="border-b border-border/30">
+                        <td className="py-2 pr-3 text-foreground whitespace-nowrap">
+                          {(() => {
+                            try {
+                              const d = new Date(row.date);
+                              return isNaN(d.getTime()) ? row.date : d.toLocaleDateString('en-GB', { year: 'numeric', month: 'short', day: 'numeric' });
+                            } catch {
+                              return row.date;
+                            }
+                          })()}
+                        </td>
+                        <td className="py-2 pr-3 text-right text-foreground">
+                          {formatCurrency(row.investmentTotal, baseCurrency)}
+                        </td>
+                        <td className="py-2 pr-3 text-right text-foreground">
+                          {formatCurrency(row.bankTotal, baseCurrency)}
+                        </td>
+                        <td className="py-2 pr-3 text-right text-foreground">
+                          {formatCurrency(row.otherTotal, baseCurrency)}
+                        </td>
+                        <td className="py-2 pr-3 text-right font-bold text-foreground">
+                          {formatCurrency(row.total, baseCurrency)}
+                        </td>
+                        <td className="py-2 pl-3 text-center">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 px-2 text-destructive hover:bg-destructive/10"
+                            onClick={() => deleteTotalAssetsSnapshot(row.id)}
+                          >
+                            Delete
+                          </Button>
+                        </td>
+                      </tr>
+                    ))}
+                    {totalAssetsHistory.length === 0 && (
+                      <tr>
+                        <td className="py-4 text-center text-muted-foreground" colSpan={6}>
+                          {isLoadingTotalAssetsHistory ? "Loading history..." : "No recorded snapshots found. Click 'Record Snapshot' above to save the current asset breakdown."}
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Currency Analytics */}
         <Card className="bg-gradient-card border-border shadow-card">

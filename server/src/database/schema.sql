@@ -145,3 +145,19 @@ CREATE INDEX IF NOT EXISTS idx_other_assets_asset_type ON other_assets(asset_typ
 CREATE INDEX IF NOT EXISTS idx_other_assets_created_at ON other_assets(created_at);
 CREATE INDEX IF NOT EXISTS idx_schwab_settings_user_id ON schwab_settings(user_id);
 CREATE INDEX IF NOT EXISTS idx_accounts_integration_type ON accounts(integration_type);
+
+-- Total assets history table
+CREATE TABLE IF NOT EXISTS total_assets_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    date DATE NOT NULL,
+    investment_total REAL NOT NULL,
+    bank_total REAL NOT NULL,
+    other_total REAL NOT NULL,
+    total REAL NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_total_assets_history_user_id ON total_assets_history(user_id);
+CREATE INDEX IF NOT EXISTS idx_total_assets_history_date ON total_assets_history(date);

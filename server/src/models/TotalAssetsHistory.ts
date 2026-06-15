@@ -1,0 +1,81 @@
+import { dbGet, dbAll, dbRun } from '../database/connection.js';
+
+export interface TotalAssetsHistoryData {
+  id: number;
+  userId: number;
+  date: string;
+  investmentTotal: number;
+  bankTotal: number;
+  otherTotal: number;
+  total: number;
+  createdAt: string;
+}
+
+export interface CreateTotalAssetsHistoryData {
+  date: string;
+  investmentTotal: number;
+  bankTotal: number;
+  otherTotal: number;
+  total: number;
+}
+
+export class TotalAssetsHistoryModel {
+  static async findByUserId(userId: number): Promise<TotalAssetsHistoryData[]> {
+    const history = await dbAll(
+      `SELECT 
+        id, user_id as userId, date, 
+        investment_total as investmentTotal, 
+        bank_total as bankTotal, 
+        other_total as otherTotal, 
+        total, 
+        created_at as createdAt
+      FROM total_assets_history 
+      WHERE user_id = ? 
+      ORDER BY date DESC, created_at DESC`,
+      [userId]
+    );
+    
+    return history as TotalAssetsHistoryData[];
+  }
+  
+  static async create(userId: number, data: CreateTotalAssetsHistoryData): Promise<TotalAssetsHistoryData> {
+    const result = await dbRun(
+      `INSERT INTO total_assets_history 
+        (user_id, date, investment_total, bank_total, other_total, total) 
+      VALUES (?, ?, ?, ?, ?, ?)`,
+      [userId, data.date, data.investmentTotal, data.bankTotal, data.otherTotal, data.total]
+    );
+    
+    const record = await this.findById(result.lastID, userId);
+    if (!record) {
+      throw new Error('Failed to create total assets history record');
+    }
+    
+    return record;
+  }
+  
+  static async findById(id: number, userId: number): Promise<TotalAssetsHistoryData | null> {
+    const record = await dbGet(
+      `SELECT 
+        id, user_id as userId, date, 
+        investment_total as investmentTotal, 
+        bank_total as bankTotal, 
+        other_total as otherTotal, 
+        total, 
+        created_at as createdAt
+      FROM total_assets_history 
+      WHERE id = ? AND user_id = ?`,
+      [id, userId]
+    );
+    
+    return record as TotalAssetsHistoryData | null;
+  }
+
+  static async delete(id: number, userId: number): Promise<boolean> {
+    const result = await dbRun(
+      `DELETE FROM total_assets_history WHERE id = ? AND user_id = ?`,
+      [id, userId]
+    );
+    return result.changes > 0;
+  }
+}
