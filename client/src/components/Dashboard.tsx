@@ -1034,6 +1034,25 @@ const Dashboard = ({ onLogout, sidebarOpen, onSidebarToggle }: DashboardProps) =
       },
     };
 
+    const historyChartConfig = {
+      investmentTotal: {
+        label: "Investment Accounts",
+        color: "hsl(var(--chart-2))",
+      },
+      bankTotal: {
+        label: "Bank Accounts",
+        color: "hsl(var(--chart-3))",
+      },
+      otherTotal: {
+        label: "Other Assets",
+        color: "hsl(var(--chart-4))",
+      },
+      total: {
+        label: "Total Assets",
+        color: "hsl(var(--primary))",
+      },
+    };
+
     // Calculate converted values for display
     const totalCapitalConverted = summaryData.totalCapital;
     const currentBalanceConverted = summaryData.currentBalance;
@@ -2312,7 +2331,133 @@ const Dashboard = ({ onLogout, sidebarOpen, onSidebarToggle }: DashboardProps) =
               <CardTitle className="text-foreground">Total Assets History</CardTitle>
               <CardDescription>Historical record of asset breakdown snapshots</CardDescription>
             </CardHeader>
-            <CardContent className="p-2 md:p-6 pt-0">
+            <CardContent className="p-2 md:p-6 pt-0 space-y-6">
+              {totalAssetsHistory.length > 0 && (
+                <div className="pb-4 border-b border-border/30">
+                  <ChartContainer config={historyChartConfig} className="h-[250px] w-full" key={`chart-total-assets-history-${totalAssetsHistory.length}`}>
+                    <LineChart
+                      data={[...totalAssetsHistory].reverse()}
+                      margin={{
+                        top: 10,
+                        right: 5,
+                        left: 0,
+                        bottom: 10
+                      }}
+                    >
+                      <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.3} />
+                      <XAxis
+                        dataKey="date"
+                        type="category"
+                        tickFormatter={(value) => {
+                          if (!value) return '';
+                          try {
+                            const date = new Date(value);
+                            if (isNaN(date.getTime())) return value;
+                            return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                          } catch (error) {
+                            return value;
+                          }
+                        }}
+                        fontSize={10}
+                        tickMargin={5}
+                        axisLine={false}
+                        tickLine={false}
+                      />
+                      <YAxis
+                        tickFormatter={(value) => {
+                          return value.toLocaleString('en-US', {
+                            minimumFractionDigits: 0,
+                            maximumFractionDigits: 0
+                          });
+                        }}
+                        fontSize={10}
+                        tickMargin={5}
+                        width={window.innerWidth < 768 ? 60 : 90}
+                        axisLine={false}
+                        tickLine={false}
+                      />
+                      <ChartTooltip
+                        content={({ active, payload, label }) => {
+                          if (active && payload && payload.length) {
+                            return (
+                              <div className="bg-background border border-border rounded-lg p-2 shadow-lg max-w-[280px] md:max-w-xs">
+                                <p className="font-medium text-foreground mb-1 text-[10px] md:text-xs">
+                                  {(() => {
+                                    try {
+                                      const date = new Date(label);
+                                      if (isNaN(date.getTime())) return label;
+                                      return date.toLocaleDateString('en-US', {
+                                        month: 'short',
+                                        day: 'numeric',
+                                        year: 'numeric'
+                                      });
+                                    } catch (error) {
+                                      return label;
+                                    }
+                                  })()}
+                                </p>
+                                <div className="space-y-0.5">
+                                  {payload.map((entry, index) => (
+                                    <div key={index} className="flex items-center gap-1">
+                                      <div
+                                        className="w-2 h-2 rounded-sm flex-shrink-0"
+                                        style={{ backgroundColor: entry.color }}
+                                      />
+                                      <span className="text-[10px] md:text-xs text-muted-foreground truncate max-w-[120px] md:max-w-none">
+                                        {historyChartConfig[entry.dataKey as keyof typeof historyChartConfig]?.label}:
+                                      </span>
+                                      <span className="text-[10px] md:text-xs font-medium text-foreground ml-auto">
+                                        {formatCurrency(entry.value as number, baseCurrency)}
+                                      </span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            );
+                          }
+                          return null;
+                        }}
+                      />
+                      <ChartLegend
+                        content={<ChartLegendContent className="text-[10px] md:text-xs flex-wrap" />}
+                        wrapperStyle={{ paddingTop: '10px' }}
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="investmentTotal"
+                        stroke="var(--color-investmentTotal)"
+                        strokeWidth={2}
+                        dot={false}
+                        activeDot={{ r: 4, stroke: "var(--color-investmentTotal)", strokeWidth: 2 }}
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="bankTotal"
+                        stroke="var(--color-bankTotal)"
+                        strokeWidth={2}
+                        dot={false}
+                        activeDot={{ r: 4, stroke: "var(--color-bankTotal)", strokeWidth: 2 }}
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="otherTotal"
+                        stroke="var(--color-otherTotal)"
+                        strokeWidth={2}
+                        dot={false}
+                        activeDot={{ r: 4, stroke: "var(--color-otherTotal)", strokeWidth: 2 }}
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="total"
+                        stroke="var(--color-total)"
+                        strokeWidth={2}
+                        dot={false}
+                        activeDot={{ r: 4, stroke: "var(--color-total)", strokeWidth: 2 }}
+                      />
+                    </LineChart>
+                  </ChartContainer>
+                </div>
+              )}
               <div className="overflow-x-auto">
                 <table className="w-full text-xs md:text-sm">
                   <thead>
