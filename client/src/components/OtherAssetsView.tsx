@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
 import { 
   PlusCircle, 
   Edit, 
@@ -28,6 +29,7 @@ interface Asset {
   currency: string;
   originalValue: number;
   marketValue: number;
+  isInvestment?: number;
   remarks: string;
   createdAt: string;
   updatedAt: string;
@@ -53,6 +55,7 @@ const OtherAssetsView = ({ baseCurrency, exchangeRates, convertToBaseCurrency }:
     currency: "",
     originalValue: 0,
     marketValue: 0,
+    isInvestment: 1,
     remarks: ""
   });
 
@@ -62,6 +65,7 @@ const OtherAssetsView = ({ baseCurrency, exchangeRates, convertToBaseCurrency }:
     currency: "",
     originalValue: 0,
     marketValue: 0,
+    isInvestment: 1,
     remarks: ""
   });
 
@@ -230,6 +234,7 @@ const OtherAssetsView = ({ baseCurrency, exchangeRates, convertToBaseCurrency }:
       currency: "",
       originalValue: 0,
       marketValue: 0,
+      isInvestment: 1,
       remarks: ""
     });
   };
@@ -242,6 +247,7 @@ const OtherAssetsView = ({ baseCurrency, exchangeRates, convertToBaseCurrency }:
       currency: "",
       originalValue: 0,
       marketValue: 0,
+      isInvestment: 1,
       remarks: ""
     });
   };
@@ -254,6 +260,7 @@ const OtherAssetsView = ({ baseCurrency, exchangeRates, convertToBaseCurrency }:
       currency: asset.currency,
       originalValue: asset.originalValue,
       marketValue: asset.marketValue,
+      isInvestment: asset.isInvestment !== undefined ? asset.isInvestment : 1,
       remarks: asset.remarks
     });
   };
@@ -363,6 +370,21 @@ const OtherAssetsView = ({ baseCurrency, exchangeRates, convertToBaseCurrency }:
                   onChange={(e) => setNewAsset({...newAsset, remarks: e.target.value})}
                 />
               </div>
+              <div className="flex items-center space-x-2 py-2 border-t border-border/30 mt-2">
+                <Checkbox 
+                  id="non-investment" 
+                  checked={newAsset.isInvestment === 0} 
+                  onCheckedChange={(checked) => setNewAsset({...newAsset, isInvestment: checked ? 0 : 1})} 
+                />
+                <div className="grid gap-1.5 leading-none">
+                  <Label htmlFor="non-investment" className="cursor-pointer text-foreground font-medium">
+                    Mark as Non-investment Asset
+                  </Label>
+                  <p className="text-xs text-muted-foreground">
+                    Non-investment assets are counted in your Total Assets, but excluded from investment performance and allocation analysis.
+                  </p>
+                </div>
+              </div>
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={handleDialogClose}>
@@ -452,9 +474,16 @@ const OtherAssetsView = ({ baseCurrency, exchangeRates, convertToBaseCurrency }:
                     <div className="flex flex-col min-w-0 flex-1">
                       <div className="flex flex-col sm:flex-row sm:items-center sm:gap-2">
                         <CardTitle className="text-foreground truncate">{asset.asset}</CardTitle>
-                        <Badge variant="outline" className="w-fit">
-                          {asset.assetType}
-                        </Badge>
+                        <div className="flex flex-wrap items-center gap-1.5 mt-1 sm:mt-0">
+                          <Badge variant="outline" className="w-fit">
+                            {asset.assetType}
+                          </Badge>
+                          {asset.isInvestment === 0 && (
+                            <Badge variant="secondary" className="w-fit bg-amber-500/10 text-amber-500 hover:bg-amber-500/20 border-amber-500/20">
+                              Non-Investment
+                            </Badge>
+                          )}
+                        </div>
                       </div>
                       <CardDescription className="truncate">
                         {asset.currency} • Updated {new Date(asset.updatedAt).toLocaleDateString()}
@@ -638,6 +667,21 @@ const OtherAssetsView = ({ baseCurrency, exchangeRates, convertToBaseCurrency }:
                 value={editAsset.remarks}
                 onChange={(e) => setEditAsset({...editAsset, remarks: e.target.value})}
               />
+            </div>
+            <div className="flex items-center space-x-2 py-2 border-t border-border/30 mt-2">
+              <Checkbox 
+                id="edit-non-investment" 
+                checked={editAsset.isInvestment === 0} 
+                onCheckedChange={(checked) => setEditAsset({...editAsset, isInvestment: checked ? 0 : 1})} 
+              />
+              <div className="grid gap-1.5 leading-none">
+                <Label htmlFor="edit-non-investment" className="cursor-pointer text-foreground font-medium">
+                  Mark as Non-investment Asset
+                </Label>
+                <p className="text-xs text-muted-foreground">
+                  Non-investment assets are counted in your Total Assets, but excluded from investment performance and allocation analysis.
+                </p>
+              </div>
             </div>
           </div>
           <DialogFooter>

@@ -8,6 +8,7 @@ export interface OtherAsset {
   currency: string;
   originalValue: number;
   marketValue: number;
+  isInvestment: number;
   remarks: string;
   createdAt: string;
   updatedAt: string;
@@ -19,6 +20,7 @@ export interface CreateOtherAssetData {
   currency: string;
   originalValue: number;
   marketValue: number;
+  isInvestment?: number;
   remarks: string;
 }
 
@@ -28,6 +30,7 @@ export interface UpdateOtherAssetData {
   currency?: string;
   originalValue?: number;
   marketValue?: number;
+  isInvestment?: number;
   remarks?: string;
 }
 
@@ -36,7 +39,8 @@ export class OtherAssetModel {
     const assets = await dbAll(
       `SELECT 
         id, user_id as userId, asset_type as assetType, asset, currency,
-        original_value as originalValue, market_value as marketValue, remarks,
+        original_value as originalValue, market_value as marketValue, 
+        COALESCE(is_investment, 1) as isInvestment, remarks,
         created_at as createdAt, updated_at as updatedAt
       FROM other_assets 
       WHERE user_id = ? 
@@ -51,7 +55,8 @@ export class OtherAssetModel {
     const asset = await dbGet(
       `SELECT 
         id, user_id as userId, asset_type as assetType, asset, currency,
-        original_value as originalValue, market_value as marketValue, remarks,
+        original_value as originalValue, market_value as marketValue, 
+        COALESCE(is_investment, 1) as isInvestment, remarks,
         created_at as createdAt, updated_at as updatedAt
       FROM other_assets 
       WHERE id = ? AND user_id = ?`,
@@ -62,10 +67,11 @@ export class OtherAssetModel {
   }
   
   static async create(userId: number, assetData: CreateOtherAssetData): Promise<OtherAsset> {
+    const isInvestment = assetData.isInvestment !== undefined ? assetData.isInvestment : 1;
     const result = await dbRun(
       `INSERT INTO other_assets (
-        user_id, asset_type, asset, currency, original_value, market_value, remarks
-      ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        user_id, asset_type, asset, currency, original_value, market_value, is_investment, remarks
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         userId, 
         assetData.assetType, 
@@ -73,6 +79,7 @@ export class OtherAssetModel {
         assetData.currency, 
         assetData.originalValue, 
         assetData.marketValue, 
+        isInvestment,
         assetData.remarks
       ]
     );
@@ -112,6 +119,11 @@ export class OtherAssetModel {
     if (assetData.marketValue !== undefined) {
       updateFields.push('market_value = ?');
       values.push(assetData.marketValue);
+    }
+
+    if (assetData.isInvestment !== undefined) {
+      updateFields.push('is_investment = ?');
+      values.push(assetData.isInvestment);
     }
     
     if (assetData.remarks !== undefined) {

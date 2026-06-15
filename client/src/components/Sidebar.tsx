@@ -12,7 +12,8 @@ import {
   ChevronRight,
   Shield,
   ShieldCheck,
-  Building
+  Building,
+  BrainCircuit
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -43,6 +44,7 @@ const Sidebar = ({ currentView, onViewChange, onLogout, isOpen, onToggle, isColl
   const [showTwoFactorSetup, setShowTwoFactorSetup] = useState(false);
   const menuItems = [
     { id: "overview", label: "Overview", icon: Home },
+    { id: "ai-insights", label: "AI Insights", icon: BrainCircuit },
     { id: "accounts", label: "Accounts", icon: Wallet },
     { id: "currency", label: "Currency", icon: DollarSign },
     { id: "portfolio", label: "Portfolio", icon: BarChart3 },

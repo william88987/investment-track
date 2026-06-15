@@ -25,7 +25,8 @@ import {
   PieChart as PieChartIcon,
   RefreshCw,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  Coins
 } from "lucide-react";
 import Sidebar from "./Sidebar";
 import AccountsView from "./AccountsView";
@@ -340,6 +341,16 @@ const Dashboard = ({ onLogout, sidebarOpen, onSidebarToggle }: DashboardProps) =
         ]);
       } else if (currentView === "other-assets") {
         loadOtherAssets();
+      } else if (currentView === "ai-insights") {
+        Promise.all([
+          loadAccounts(),
+          loadCurrencies(),
+          loadOtherAssets(),
+          loadOtherPortfolio(),
+          loadOtherCashBalances(),
+          loadIntegratedAccountsData(),
+          loadTotalAssetsHistory()
+        ]);
       }
     }
   }, [currentView, user]);
@@ -477,7 +488,9 @@ const Dashboard = ({ onLogout, sidebarOpen, onSidebarToggle }: DashboardProps) =
   const fetchAIFeedback = async () => {
     setIsLoadingAIFeedback(true);
     try {
-      const { currencyBreakdown, categoryBreakdown } = breakdownsRef.current;
+      const { portfolioChartData, currencyChartData } = calculatePortfolioAndCurrencyBreakdowns();
+      const currencyBreakdown = currencyChartData;
+      const categoryBreakdown = portfolioChartData;
       const response = await apiClient.getAIPortfolioFeedback({
         currencyBreakdown,
         categoryBreakdown
@@ -1201,8 +1214,353 @@ const Dashboard = ({ onLogout, sidebarOpen, onSidebarToggle }: DashboardProps) =
     }
   };
 
+  const calculatePortfolioAndCurrencyBreakdowns = () => {
+    // Helper function to categorize portfolio positions
+    const categorizePosition = (position: any): string => {
+      const symbol = position.symbol?.toUpperCase() || '';
+      const secType = position.secType?.toUpperCase() || '';
+      let country = position.country?.toUpperCase() || '';
+      const category = position.category?.toUpperCase() || '';
+      const industry = position.industry?.toUpperCase() || '';
+      const exchange = position.exchange?.toUpperCase() || position.primaryExchange?.toUpperCase() || '';
+      const currency = position.currency?.toUpperCase() || '';
+      const accountType = position.accountType?.toUpperCase() || '';
+
+      // Special handling for Charles Schwab positions
+      if (accountType === 'SCHWAB') {
+        if (secType === 'EQUITY') return 'STOCK_USA';
+        if (secType === 'FIXED_INCOME') return 'BOND_USA';
+      }
+
+      // If country is null/empty, use currency as fallback to determine region
+      if (!country && currency) {
+        if (currency === 'USD') country = 'US';
+        else if (currency === 'HKD') country = 'HK';
+        else if (currency === 'CAD') country = 'CA';
+        else if (currency === 'SGD') country = 'SG';
+        else if (currency === 'EUR') country = 'EUROPE';
+        else if (currency === 'GBP') country = 'GB';
+      }
+
+      if (secType === 'CASH') return 'CASH';
+
+      if (secType === 'CRYPTO' || symbol.includes('BTC') || symbol.includes('ETH') ||
+        symbol.includes('USDT') || symbol.includes('USDC')) {
+        return 'CRYPTO';
+      }
+
+      if (secType === 'BOND' || symbol.includes('TLT') || symbol.includes('IEF') ||
+        symbol.includes('AGG') || symbol.includes('BND')) {
+        return 'BOND_USA';
+      }
+
+      const isREIT = category.includes('REIT') ||
+        category.includes('REITS') ||
+        industry.includes('REIT') ||
+        symbol.includes('REIT') ||
+        symbol.endsWith('.UN');
+
+      if (secType === 'STK' || secType === 'ETF') {
+        if (isREIT) {
+          if (country === 'CANADA' || country === 'CA' ||
+            symbol.endsWith('.TO') || symbol.endsWith('.UN') || exchange.includes('TSX')) {
+            return 'REIT_CANADA';
+          } else if (country === 'SINGAPORE' || country === 'SG' ||
+            symbol.endsWith('.SG') || exchange.includes('SGX')) {
+            return 'REIT_SINGAPORE';
+          } else if (country === 'UK' || country === 'GB' || country === 'UNITED KINGDOM' ||
+            country === 'FRANCE' || country === 'FR' ||
+            country === 'GERMANY' || country === 'DE' ||
+            country === 'ITALY' || country === 'IT' ||
+            country === 'SPAIN' || country === 'ES' ||
+            country === 'EUROPE' ||
+            exchange.includes('LSE') || exchange.includes('EURONEXT')) {
+            return 'REIT_EUROPE';
+          } else if (country === 'USA' || country === 'US' || country === 'UNITED STATES' ||
+            exchange.includes('NYSE') || exchange.includes('NASDAQ')) {
+            return 'REIT_USA';
+          }
+        } else {
+          if (country === 'HONG KONG' || country === 'HK' ||
+            exchange.includes('HKEX') || exchange.includes('SEHK')) {
+            return 'STOCK_HK';
+          } else if (country === 'CANADA' || country === 'CA' ||
+            symbol.endsWith('.TO') || exchange.includes('TSX')) {
+            return 'STOCK_CANADA';
+          } else if (country === 'USA' || country === 'US' || country === 'UNITED STATES' ||
+            exchange.includes('NYSE') || exchange.includes('NASDAQ') ||
+            exchange.includes('AMEX')) {
+            return 'STOCK_USA';
+          }
+        }
+      }
+
+      return 'OTHER';
+    };
+
+    // Calculate Portfolio Distribution
+    const portfolioDistribution = new Map<string, { value: number, items: Array<{ name: string, category: string, value: number, source: string, originalValue: number, originalCurrency: string }> }>();
+
+    const addToPortfolio = (category: string, value: number, itemName: string, source: string, originalValue: number, originalCurrency: string) => {
+      const current = portfolioDistribution.get(category) || { value: 0, items: [] };
+      current.value += value;
+      current.items.push({ name: itemName, category, value, source, originalValue, originalCurrency });
+      portfolioDistribution.set(category, current);
+    };
+
+    // Add integrated accounts portfolio (IB and Schwab)
+    integratedAccountsPortfolio.forEach(position => {
+      if (position.marketValue && position.marketValue > 0) {
+        const category = categorizePosition(position);
+        const valueInBase = convertToBaseCurrency(position.marketValue, position.currency);
+        const source = position.accountType === 'IB' ? 'IB Portfolio' :
+          position.accountType === 'SCHWAB' ? 'Schwab Portfolio' :
+            'Integrated Portfolio';
+        addToPortfolio(category, valueInBase,
+          `${position.symbol} (${position.secType || 'Unknown'})`, source,
+          position.marketValue, position.currency);
+      }
+    });
+
+    // Add other portfolio positions (manual)
+    otherPortfolio.forEach(position => {
+      if (position.marketPrice && position.quantity) {
+        const category = categorizePosition(position);
+        const marketValue = position.marketPrice * position.quantity;
+        const valueInBase = convertToBaseCurrency(marketValue, position.currency);
+        addToPortfolio(category, valueInBase,
+          `${position.symbol} (${position.secType || 'Unknown'})`, 'Other Portfolio',
+          marketValue, position.currency);
+      }
+    });
+
+    // Add integrated accounts cash
+    integratedAccountsCash.forEach(cash => {
+      const amount = cash.balance || cash.amount || 0;
+      if (amount && amount > 0) {
+        const valueInBase = convertToBaseCurrency(amount, cash.currency);
+        const source = cash.accountType === 'IB' ? 'IB Cash' :
+          cash.accountType === 'SCHWAB' ? 'Schwab Cash' :
+            'Integrated Cash';
+        addToPortfolio('CASH', valueInBase, `Cash - ${cash.currency}`, source,
+          amount, cash.currency);
+      }
+    });
+
+    // Add other cash balances (manual)
+    otherCashBalances.forEach(cash => {
+      if (cash.amount && cash.amount > 0) {
+        const valueInBase = convertToBaseCurrency(cash.amount, cash.currency);
+        addToPortfolio('CASH', valueInBase, `Cash - ${cash.currency}`, 'Other Cash',
+          cash.amount, cash.currency);
+      }
+    });
+
+    // Add bank account balances
+    accounts.filter(acc => acc.accountType === 'BANK').forEach(acc => {
+      if (acc.currentBalance && acc.currentBalance > 0) {
+        const valueInBase = convertToBaseCurrency(acc.currentBalance, acc.currency);
+        addToPortfolio('CASH', valueInBase, acc.name, 'Bank Account',
+          acc.currentBalance, acc.currency);
+      }
+    });
+
+    // Add other assets (exclude non-investment other assets)
+    otherAssets.filter(asset => asset.isInvestment !== 0).forEach(asset => {
+      const valueInBase = convertToBaseCurrency(asset.marketValue, asset.currency);
+      if (asset.assetType?.toLowerCase().includes('real estate') ||
+        asset.assetType?.toLowerCase().includes('property')) {
+        addToPortfolio('REAL_ESTATE', valueInBase,
+          `${asset.asset} (${asset.assetType})`, 'Other Assets',
+          asset.marketValue, asset.currency);
+      } else {
+        addToPortfolio('OTHER', valueInBase,
+          `${asset.asset} (${asset.assetType})`, 'Other Assets',
+          asset.marketValue, asset.currency);
+      }
+    });
+
+    const categoryLabels: Record<string, string> = {
+      'REIT_CANADA': 'REITs - Canada',
+      'REIT_SINGAPORE': 'REITs - Singapore',
+      'REIT_EUROPE': 'REITs - Europe',
+      'REIT_USA': 'REITs - USA',
+      'STOCK_HK': 'Stocks - HK',
+      'STOCK_CANADA': 'Stocks - Canada',
+      'STOCK_USA': 'Stocks - USA',
+      'BOND_USA': 'Bonds - USA',
+      'CRYPTO': 'Crypto',
+      'CASH': 'Cash',
+      'REAL_ESTATE': 'Real Estate',
+      'OTHER': 'Others'
+    };
+
+    const portfolioChartData = Array.from(portfolioDistribution.entries())
+      .map(([category, data]) => ({
+        category,
+        label: categoryLabels[category] || category,
+        value: data.value,
+        percentage: 0,
+        items: data.items
+      }))
+      .filter(item => item.value > 0)
+      .sort((a, b) => b.value - a.value);
+
+    const totalPortfolioValue = portfolioChartData.reduce((sum, item) => sum + item.value, 0);
+    portfolioChartData.forEach(item => {
+      item.percentage = totalPortfolioValue > 0 ? (item.value / totalPortfolioValue) * 100 : 0;
+    });
+
+    // Calculate Currency Distribution
+    const currencyDistribution = new Map<string, { bankAccounts: number, ibPortfolio: number, ibCash: number, schwabPortfolio: number, schwabCash: number, otherPortfolio: number, otherCash: number, otherAssets: number, total: number }>();
+
+    const initCurrency = (currency: string) => {
+      if (!currencyDistribution.has(currency)) {
+        currencyDistribution.set(currency, {
+          bankAccounts: 0,
+          ibPortfolio: 0,
+          ibCash: 0,
+          schwabPortfolio: 0,
+          schwabCash: 0,
+          otherPortfolio: 0,
+          otherCash: 0,
+          otherAssets: 0,
+          total: 0
+        });
+      }
+      return currencyDistribution.get(currency)!;
+    };
+
+    // Add bank account balances
+    accounts.filter(acc => acc.accountType === 'BANK').forEach(acc => {
+      if (acc.currentBalance && acc.currency) {
+        const data = initCurrency(acc.currency);
+        data.bankAccounts += acc.currentBalance;
+        data.total += acc.currentBalance;
+      }
+    });
+
+    // Add other portfolio positions
+    otherPortfolio.forEach(position => {
+      if (position.marketPrice && position.quantity && position.currency) {
+        const marketValue = position.marketPrice * position.quantity;
+        const data = initCurrency(position.currency);
+        data.otherPortfolio += marketValue;
+        data.total += marketValue;
+      }
+    });
+
+    // Add other portfolio cash balances
+    otherCashBalances.forEach(cash => {
+      if (cash.amount && cash.currency) {
+        const data = initCurrency(cash.currency);
+        data.otherCash += cash.amount;
+        data.total += cash.amount;
+      }
+    });
+
+    // Add other assets (exclude non-investment other assets)
+    otherAssets.filter(asset => asset.isInvestment !== 0).forEach(asset => {
+      const data = initCurrency(asset.currency);
+      data.otherAssets += asset.marketValue;
+      data.total += asset.marketValue;
+    });
+
+    // Add integrated accounts portfolio
+    integratedAccountsPortfolio.forEach(position => {
+      if (position.marketValue && position.currency) {
+        const data = initCurrency(position.currency);
+        if (position.accountType === 'IB') {
+          data.ibPortfolio += position.marketValue;
+        } else if (position.accountType === 'SCHWAB') {
+          data.schwabPortfolio += position.marketValue;
+        }
+        data.total += position.marketValue;
+      }
+    });
+
+    // Add integrated accounts cash
+    integratedAccountsCash.forEach(cash => {
+      const currency = cash.currency;
+      const amount = cash.balance || cash.amount || 0;
+      if (amount && currency) {
+        const data = initCurrency(currency);
+        if (cash.accountType === 'IB') {
+          data.ibCash += amount;
+        } else if (cash.accountType === 'SCHWAB') {
+          data.schwabCash += amount;
+        }
+        data.total += amount;
+      }
+    });
+
+    const currencyChartData = Array.from(currencyDistribution.entries())
+      .map(([currency, data]) => ({
+        currency,
+        value: data.total,
+        valueHKD: convertToBaseCurrency(data.total, currency),
+        percentage: 0,
+        breakdown: {
+          bankAccounts: data.bankAccounts,
+          ibPortfolio: data.ibPortfolio,
+          ibCash: data.ibCash,
+          schwabPortfolio: data.schwabPortfolio,
+          schwabCash: data.schwabCash,
+          otherPortfolio: data.otherPortfolio,
+          otherCash: data.otherCash,
+          otherAssets: data.otherAssets
+        }
+      }))
+      .filter(item => item.valueHKD > 0)
+      .sort((a, b) => b.valueHKD - a.valueHKD);
+
+    const totalValue = currencyChartData.reduce((sum, item) => sum + item.valueHKD, 0);
+    currencyChartData.forEach(item => {
+      item.percentage = totalValue > 0 ? (item.valueHKD / totalValue) * 100 : 0;
+    });
+
+    return { portfolioChartData, currencyChartData };
+  };
+
   const renderOverview = () => {
     const summaryData = calculateSummaryData();
+    const { portfolioChartData, currencyChartData } = calculatePortfolioAndCurrencyBreakdowns();
+
+    // Define colors for portfolio categories
+    const portfolioColors = [
+      "hsl(var(--chart-1))",
+      "hsl(var(--chart-2))",
+      "hsl(var(--chart-3))",
+      "hsl(var(--chart-4))",
+      "hsl(var(--chart-5))",
+      "#8884d8",
+      "#82ca9d",
+      "#ffc658",
+      "#ff7300",
+      "#00ff00",
+      "#ff00ff",
+      "#00ffff"
+    ];
+
+    // Define colors for currencies
+    const currencyColors = [
+      "hsl(var(--chart-1))",
+      "hsl(var(--chart-2))",
+      "hsl(var(--chart-3))",
+      "hsl(var(--chart-4))",
+      "hsl(var(--chart-5))",
+      "#8884d8",
+      "#82ca9d",
+      "#ffc658",
+      "#ff7300",
+      "#00ff00"
+    ];
+
+    // Save current breakdowns to ref for AI feedback
+    breakdownsRef.current = {
+      currencyBreakdown: currencyChartData,
+      categoryBreakdown: portfolioChartData
+    };
 
     const calculateAndStoreTodaySnapshot = async () => {
       try {
@@ -1248,6 +1606,10 @@ const Dashboard = ({ onLogout, sidebarOpen, onSidebarToggle }: DashboardProps) =
         label: "Other Assets",
         color: "hsl(var(--chart-4))",
       },
+      nonInvestmentTotal: {
+        label: "Non-investment Assets",
+        color: "hsl(var(--chart-5))",
+      },
       total: {
         label: "Total Assets",
         color: "hsl(var(--primary))",
@@ -1273,11 +1635,15 @@ const Dashboard = ({ onLogout, sidebarOpen, onSidebarToggle }: DashboardProps) =
       .filter(acc => acc.accountType === 'BANK')
       .reduce((sum, acc) => sum + convertToBaseCurrency(acc.currentBalance, acc.currency), 0);
 
-    const otherAssetsValue = otherAssets.reduce((sum, asset) =>
-      sum + convertToBaseCurrency(asset.marketValue, asset.currency), 0
-    );
+    const otherAssetsValue = otherAssets
+      .filter(asset => asset.isInvestment !== 0)
+      .reduce((sum, asset) => sum + convertToBaseCurrency(asset.marketValue, asset.currency), 0);
 
-    const totalAssetsValue = investmentAccountsValue + bankAccountsValue + otherAssetsValue;
+    const nonInvestmentAssetsValue = otherAssets
+      .filter(asset => asset.isInvestment === 0)
+      .reduce((sum, asset) => sum + convertToBaseCurrency(asset.marketValue, asset.currency), 0);
+
+    const totalAssetsValue = investmentAccountsValue + bankAccountsValue + otherAssetsValue + nonInvestmentAssetsValue;
 
     const recordTotalAssetsSnapshot = async () => {
       try {
@@ -1288,6 +1654,7 @@ const Dashboard = ({ onLogout, sidebarOpen, onSidebarToggle }: DashboardProps) =
           investmentTotal: investmentAccountsValue,
           bankTotal: bankAccountsValue,
           otherTotal: otherAssetsValue,
+          nonInvestmentTotal: nonInvestmentAssetsValue,
           total: totalAssetsValue
         });
         if (response.error) {
@@ -1503,412 +1870,7 @@ const Dashboard = ({ onLogout, sidebarOpen, onSidebarToggle }: DashboardProps) =
       });
     };
 
-    // Helper function to categorize portfolio positions
-    const categorizePosition = (position: any): string => {
-      const symbol = position.symbol?.toUpperCase() || '';
-      const secType = position.secType?.toUpperCase() || '';
-      let country = position.country?.toUpperCase() || '';
-      const category = position.category?.toUpperCase() || '';
-      const industry = position.industry?.toUpperCase() || '';
-      const exchange = position.exchange?.toUpperCase() || position.primaryExchange?.toUpperCase() || '';
-      const currency = position.currency?.toUpperCase() || '';
-      const accountType = position.accountType?.toUpperCase() || '';
-
-      // Special handling for Charles Schwab positions
-      if (accountType === 'SCHWAB') {
-        // Schwab EQUITY positions are US Stocks
-        if (secType === 'EQUITY') {
-          return 'STOCK_USA';
-        }
-        // Schwab FIXED_INCOME positions are Bonds
-        if (secType === 'FIXED_INCOME') {
-          return 'BOND_USA';
-        }
-      }
-
-      // If country is null/empty, use currency as fallback to determine region
-      if (!country && currency) {
-        if (currency === 'USD') {
-          country = 'US';
-        } else if (currency === 'HKD') {
-          country = 'HK';
-        } else if (currency === 'CAD') {
-          country = 'CA';
-        } else if (currency === 'SGD') {
-          country = 'SG';
-        } else if (currency === 'EUR') {
-          country = 'EUROPE';
-        } else if (currency === 'GBP') {
-          country = 'GB';
-        }
-      }
-
-      // Cash category
-      if (secType === 'CASH') {
-        return 'CASH';
-      }
-
-      // Crypto category
-      if (secType === 'CRYPTO' || symbol.includes('BTC') || symbol.includes('ETH') ||
-        symbol.includes('USDT') || symbol.includes('USDC')) {
-        return 'CRYPTO';
-      }
-
-      // Bonds category
-      if (secType === 'BOND' || symbol.includes('TLT') || symbol.includes('IEF') ||
-        symbol.includes('AGG') || symbol.includes('BND')) {
-        return 'BOND_USA';
-      }
-
-      // REIT detection - check category, industry, or symbol patterns
-      const isREIT = category.includes('REIT') ||
-        category.includes('REITS') ||
-        industry.includes('REIT') ||
-        symbol.includes('REIT') ||
-        symbol.endsWith('.UN');
-
-      // For stocks (STK or ETF), categorize by region
-      if (secType === 'STK' || secType === 'ETF') {
-        // First check if it's a REIT, then categorize by country
-        if (isREIT) {
-          if (country === 'CANADA' || country === 'CA' ||
-            symbol.endsWith('.TO') || symbol.endsWith('.UN') || exchange.includes('TSX')) {
-            return 'REIT_CANADA';
-          } else if (country === 'SINGAPORE' || country === 'SG' ||
-            symbol.endsWith('.SG') || exchange.includes('SGX')) {
-            return 'REIT_SINGAPORE';
-          } else if (country === 'UK' || country === 'GB' || country === 'UNITED KINGDOM' ||
-            country === 'FRANCE' || country === 'FR' ||
-            country === 'GERMANY' || country === 'DE' ||
-            country === 'ITALY' || country === 'IT' ||
-            country === 'SPAIN' || country === 'ES' ||
-            country === 'EUROPE' ||
-            exchange.includes('LSE') || exchange.includes('EURONEXT')) {
-            return 'REIT_EUROPE';
-          } else if (country === 'USA' || country === 'US' || country === 'UNITED STATES' ||
-            exchange.includes('NYSE') || exchange.includes('NASDAQ')) {
-            return 'REIT_USA';
-          }
-        } else {
-          // Not a REIT, categorize as stock by country
-          if (country === 'HONG KONG' || country === 'HK' ||
-            exchange.includes('HKEX') || exchange.includes('SEHK')) {
-            return 'STOCK_HK';
-          } else if (country === 'CANADA' || country === 'CA' ||
-            symbol.endsWith('.TO') || exchange.includes('TSX')) {
-            return 'STOCK_CANADA';
-          } else if (country === 'USA' || country === 'US' || country === 'UNITED STATES' ||
-            exchange.includes('NYSE') || exchange.includes('NASDAQ') ||
-            exchange.includes('AMEX')) {
-            return 'STOCK_USA';
-          }
-        }
-      }
-
-      return 'OTHER';
-    };
-
-    // Calculate Portfolio Distribution
-    const portfolioDistribution = new Map<string, { value: number, items: Array<{ name: string, category: string, value: number, source: string, originalValue: number, originalCurrency: string }> }>();
-
-    // Helper to add to distribution
-    const addToPortfolio = (category: string, value: number, itemName: string, source: string, originalValue: number, originalCurrency: string) => {
-      const current = portfolioDistribution.get(category) || { value: 0, items: [] };
-      current.value += value;
-      current.items.push({ name: itemName, category, value, source, originalValue, originalCurrency });
-      portfolioDistribution.set(category, current);
-    };
-
-    // Add integrated accounts portfolio (IB and Schwab) - separate by account type
-    integratedAccountsPortfolio.forEach(position => {
-      if (position.marketValue && position.marketValue > 0) {
-        const category = categorizePosition(position);
-        const valueInBase = convertToBaseCurrency(position.marketValue, position.currency);
-        const source = position.accountType === 'IB' ? 'IB Portfolio' :
-          position.accountType === 'SCHWAB' ? 'Schwab Portfolio' :
-            'Integrated Portfolio';
-        addToPortfolio(category, valueInBase,
-          `${position.symbol} (${position.secType || 'Unknown'})`, source,
-          position.marketValue, position.currency);
-      }
-    });
-
-    // Add other portfolio positions (manual)
-    otherPortfolio.forEach(position => {
-      if (position.marketPrice && position.quantity) {
-        const category = categorizePosition(position);
-        const marketValue = position.marketPrice * position.quantity;
-        const valueInBase = convertToBaseCurrency(marketValue, position.currency);
-        addToPortfolio(category, valueInBase,
-          `${position.symbol} (${position.secType || 'Unknown'})`, 'Other Portfolio',
-          marketValue, position.currency);
-      }
-    });
-
-    // Add integrated accounts cash (IB and Schwab) - separate by account type
-    integratedAccountsCash.forEach(cash => {
-      const amount = cash.balance || cash.amount || 0;
-      if (amount && amount > 0) {
-        const valueInBase = convertToBaseCurrency(amount, cash.currency);
-        const source = cash.accountType === 'IB' ? 'IB Cash' :
-          cash.accountType === 'SCHWAB' ? 'Schwab Cash' :
-            'Integrated Cash';
-        addToPortfolio('CASH', valueInBase, `Cash - ${cash.currency}`, source,
-          amount, cash.currency);
-      }
-    });
-
-    // Add other cash balances (manual)
-    otherCashBalances.forEach(cash => {
-      if (cash.amount && cash.amount > 0) {
-        const valueInBase = convertToBaseCurrency(cash.amount, cash.currency);
-        addToPortfolio('CASH', valueInBase, `Cash - ${cash.currency}`, 'Other Cash',
-          cash.amount, cash.currency);
-      }
-    });
-
-    // Add bank account balances
-    accounts.filter(acc => acc.accountType === 'BANK').forEach(acc => {
-      if (acc.currentBalance && acc.currentBalance > 0) {
-        const valueInBase = convertToBaseCurrency(acc.currentBalance, acc.currency);
-        addToPortfolio('CASH', valueInBase, acc.name, 'Bank Account',
-          acc.currentBalance, acc.currency);
-      }
-    });
-
-    // Add other assets
-    otherAssets.forEach(asset => {
-      const valueInBase = convertToBaseCurrency(asset.marketValue, asset.currency);
-      if (asset.assetType?.toLowerCase().includes('real estate') ||
-        asset.assetType?.toLowerCase().includes('property')) {
-        addToPortfolio('REAL_ESTATE', valueInBase,
-          `${asset.asset} (${asset.assetType})`, 'Other Assets',
-          asset.marketValue, asset.currency);
-      } else {
-        addToPortfolio('OTHER', valueInBase,
-          `${asset.asset} (${asset.assetType})`, 'Other Assets',
-          asset.marketValue, asset.currency);
-      }
-    });
-
-    // Category labels mapping
-    const categoryLabels: Record<string, string> = {
-      'REIT_CANADA': 'REITs - Canada',
-      'REIT_SINGAPORE': 'REITs - Singapore',
-      'REIT_EUROPE': 'REITs - Europe',
-      'REIT_USA': 'REITs - USA',
-      'STOCK_HK': 'Stocks - HK',
-      'STOCK_CANADA': 'Stocks - Canada',
-      'STOCK_USA': 'Stocks - USA',
-      'BOND_USA': 'Bonds - USA',
-      'CRYPTO': 'Crypto',
-      'CASH': 'Cash',
-      'REAL_ESTATE': 'Real Estate',
-      'OTHER': 'Others'
-    };
-
-    // Convert to chart data with colors
-    const portfolioChartData = Array.from(portfolioDistribution.entries())
-      .map(([category, data]) => ({
-        category,
-        label: categoryLabels[category] || category,
-        value: data.value,
-        percentage: 0, // Will be calculated below
-        items: data.items
-      }))
-      .filter(item => item.value > 0)
-      .sort((a, b) => b.value - a.value);
-
-    // Calculate percentages
-    const totalPortfolioValue = portfolioChartData.reduce((sum, item) => sum + item.value, 0);
-    portfolioChartData.forEach(item => {
-      item.percentage = totalPortfolioValue > 0 ? (item.value / totalPortfolioValue) * 100 : 0;
-    });
-
-    // Define colors for portfolio categories
-    const portfolioColors = [
-      "hsl(var(--chart-1))",
-      "hsl(var(--chart-2))",
-      "hsl(var(--chart-3))",
-      "hsl(var(--chart-4))",
-      "hsl(var(--chart-5))",
-      "#8884d8",
-      "#82ca9d",
-      "#ffc658",
-      "#ff7300",
-      "#00ff00",
-      "#ff00ff",
-      "#00ffff"
-    ];
-
-    // Calculate Currency Distribution with detailed breakdown
-    const currencyDistribution = new Map<string, {
-      total: number;
-      bankAccounts: number;
-      ibPortfolio: number;
-      ibCash: number;
-      schwabPortfolio: number;
-      schwabCash: number;
-      otherPortfolio: number;
-      otherCash: number;
-      otherAssets: number;
-    }>();
-
-    const initCurrency = (currency: string) => {
-      if (!currencyDistribution.has(currency)) {
-        currencyDistribution.set(currency, {
-          total: 0,
-          bankAccounts: 0,
-          ibPortfolio: 0,
-          ibCash: 0,
-          schwabPortfolio: 0,
-          schwabCash: 0,
-          otherPortfolio: 0,
-          otherCash: 0,
-          otherAssets: 0
-        });
-      }
-      return currencyDistribution.get(currency)!;
-    };
-
-    // Add bank accounts
-    accounts.filter(acc => acc.accountType === 'BANK').forEach(acc => {
-      const data = initCurrency(acc.currency);
-      data.bankAccounts += acc.currentBalance;
-      data.total += acc.currentBalance;
-    });
-
-    // Note: Legacy IB portfolio and cash are now included in integratedAccountsPortfolio/Cash
-    // to avoid double counting. Keeping these commented out for reference.
-    // // Add IB portfolio positions
-    // ibPortfolio.forEach(position => {
-    //   if (position.marketValue && position.currency) {
-    //     const data = initCurrency(position.currency);
-    //     data.ibPortfolio += position.marketValue;
-    //     data.total += position.marketValue;
-    //   }
-    // });
-    // 
-    // // Add IB cash balances
-    // ibCashBalances.forEach(cash => {
-    //   if (cash.amount && cash.currency) {
-    //     const data = initCurrency(cash.currency);
-    //     data.ibCash += cash.amount;
-    //     data.total += cash.amount;
-    //   }
-    // });
-
-    // Add other portfolio positions
-    otherPortfolio.forEach(position => {
-      if (position.marketPrice && position.quantity && position.currency) {
-        const marketValue = position.marketPrice * position.quantity;
-        const data = initCurrency(position.currency);
-        data.otherPortfolio += marketValue;
-        data.total += marketValue;
-      }
-    });
-
-    // Add other portfolio cash balances
-    otherCashBalances.forEach(cash => {
-      if (cash.amount && cash.currency) {
-        const data = initCurrency(cash.currency);
-        data.otherCash += cash.amount;
-        data.total += cash.amount;
-      }
-    });
-
-    // Add other assets
-    otherAssets.forEach(asset => {
-      const data = initCurrency(asset.currency);
-      data.otherAssets += asset.marketValue;
-      data.total += asset.marketValue;
-    });
-
-    // Add integrated accounts portfolio - separate IB and Schwab
-    integratedAccountsPortfolio.forEach(position => {
-      if (position.marketValue && position.currency) {
-        const data = initCurrency(position.currency);
-        if (position.accountType === 'IB') {
-          data.ibPortfolio += position.marketValue;
-        } else if (position.accountType === 'SCHWAB') {
-          data.schwabPortfolio += position.marketValue;
-        }
-        data.total += position.marketValue;
-      }
-    });
-
-    // Add integrated accounts cash - separate IB and Schwab
-    integratedAccountsCash.forEach(cash => {
-      const currency = cash.currency;
-      const amount = cash.balance || cash.amount || 0;
-      if (amount && currency) {
-        const data = initCurrency(currency);
-        if (cash.accountType === 'IB') {
-          data.ibCash += amount;
-        } else if (cash.accountType === 'SCHWAB') {
-          data.schwabCash += amount;
-        }
-        data.total += amount;
-      }
-    });
-
-    // Debug logging
-    console.log('Currency Distribution Debug:', {
-      bankAccountsCount: accounts.filter(acc => acc.accountType === 'BANK').length,
-      otherPortfolioCount: otherPortfolio.length,
-      otherCashBalancesCount: otherCashBalances.length,
-      integratedPortfolioCount: integratedAccountsPortfolio.length,
-      integratedCashCount: integratedAccountsCash.length,
-      otherAssetsCount: otherAssets.length,
-      currencyDistribution: Array.from(currencyDistribution.entries())
-    });
-
-    // Convert to chart data with colors and breakdown
-    const currencyChartData = Array.from(currencyDistribution.entries())
-      .map(([currency, data]) => ({
-        currency,
-        value: data.total,
-        valueHKD: convertToBaseCurrency(data.total, currency),
-        percentage: 0, // Will be calculated below
-        breakdown: {
-          bankAccounts: data.bankAccounts,
-          ibPortfolio: data.ibPortfolio,
-          ibCash: data.ibCash,
-          schwabPortfolio: data.schwabPortfolio,
-          schwabCash: data.schwabCash,
-          otherPortfolio: data.otherPortfolio,
-          otherCash: data.otherCash,
-          otherAssets: data.otherAssets
-        }
-      }))
-      .filter(item => item.valueHKD > 0)
-      .sort((a, b) => b.valueHKD - a.valueHKD);
-
-    // Calculate percentages
-    const totalValue = currencyChartData.reduce((sum, item) => sum + item.valueHKD, 0);
-    currencyChartData.forEach(item => {
-      item.percentage = totalValue > 0 ? (item.valueHKD / totalValue) * 100 : 0;
-    });
-
-    // Define colors for currencies
-    const currencyColors = [
-      "hsl(var(--chart-1))",
-      "hsl(var(--chart-2))",
-      "hsl(var(--chart-3))",
-      "hsl(var(--chart-4))",
-      "hsl(var(--chart-5))",
-      "#8884d8",
-      "#82ca9d",
-      "#ffc658",
-      "#ff7300",
-      "#00ff00"
-    ];
-
-    // Save current breakdowns to ref for AI feedback
-    breakdownsRef.current = {
-      currencyBreakdown: currencyChartData,
-      categoryBreakdown: portfolioChartData
-    };
+    // Removed old duplicate inline calculations
 
     return (
       <div className="space-y-6">
@@ -2344,63 +2306,6 @@ const Dashboard = ({ onLogout, sidebarOpen, onSidebarToggle }: DashboardProps) =
           )}
         </Card>
 
-        {/* AI Financial Insights */}
-        <Card className="bg-gradient-card border-border shadow-card mt-6">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <div className="flex items-center gap-2">
-              <Zap className="h-5 w-5 text-primary" />
-              <div>
-                <CardTitle className="text-foreground">AI Portfolio Insights</CardTitle>
-                <CardDescription className="flex flex-col sm:flex-row sm:items-center sm:gap-2">
-                  <span>Automated performance analysis by MiniMax M3</span>
-                  {aiFeedbackTimestamp && (
-                    <span className="text-xs text-muted-foreground/75 font-mono">
-                      (Generated: {aiFeedbackTimestamp})
-                    </span>
-                  )}
-                </CardDescription>
-              </div>
-            </div>
-            <Button
-              variant="outline"
-              size="sm"
-              className="border-primary text-primary hover:bg-primary/10 flex items-center gap-1.5"
-              onClick={fetchAIFeedback}
-              disabled={isLoadingAIFeedback}
-            >
-              <RefreshCw className={`h-3.5 w-3.5 ${isLoadingAIFeedback ? 'animate-spin' : ''}`} />
-              <span>{aiFeedback ? 'Refresh Insights' : 'Generate Insights'}</span>
-            </Button>
-          </CardHeader>
-          <CardContent className="p-4 md:p-6 pt-0">
-            {isLoadingAIFeedback ? (
-              <div className="space-y-3 py-2 animate-pulse">
-                <div className="h-4 bg-muted rounded w-1/4"></div>
-                <div className="h-4 bg-muted rounded w-full"></div>
-                <div className="h-4 bg-muted rounded w-5/6"></div>
-                <div className="h-4 bg-muted rounded w-4/5"></div>
-              </div>
-            ) : aiFeedback ? (
-              <div className="prose prose-invert max-w-none bg-background/20 p-4 rounded-lg border border-border/30">
-                {renderMarkdown(aiFeedback)}
-              </div>
-            ) : (
-              <div className="text-center py-6 bg-background/10 rounded-lg border border-dashed border-border/30">
-                <p className="text-sm text-muted-foreground mb-3">
-                  Get professional analysis of your investment performance and total asset changes.
-                </p>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="border-primary/50 text-primary hover:bg-primary/10"
-                  onClick={fetchAIFeedback}
-                >
-                  Generate Insights
-                </Button>
-              </div>
-            )}
-          </CardContent>
-        </Card>
 
         {/* Profit/Loss Breakdown */}
         <Card className="bg-gradient-card border-border shadow-card">
@@ -2572,6 +2477,21 @@ const Dashboard = ({ onLogout, sidebarOpen, onSidebarToggle }: DashboardProps) =
               </div>
             </div>
 
+            <div className="flex items-center justify-end p-4 bg-background/30 rounded-lg">
+              <div className="flex items-center gap-3 mr-auto">
+                <Coins className="h-5 w-5 text-primary" />
+                <div>
+                  <p className="font-medium text-foreground">Non-investment Assets</p>
+                  <p className="text-sm text-muted-foreground">Vehicles, business assets, etc.</p>
+                </div>
+              </div>
+              <div className="text-right">
+                <p className="font-bold text-foreground">
+                  {formatCurrency(nonInvestmentAssetsValue, baseCurrency)}
+                </p>
+              </div>
+            </div>
+
             <div className="flex items-center justify-end p-4 bg-primary/10 rounded-lg border-2 border-primary/20">
               <div className="flex items-center gap-3 mr-auto">
                 <TrendingUp className="h-5 w-5 text-primary" />
@@ -2713,6 +2633,14 @@ const Dashboard = ({ onLogout, sidebarOpen, onSidebarToggle }: DashboardProps) =
                       />
                       <Line
                         type="monotone"
+                        dataKey="nonInvestmentTotal"
+                        stroke="var(--color-nonInvestmentTotal)"
+                        strokeWidth={2}
+                        dot={false}
+                        activeDot={{ r: 4, stroke: "var(--color-nonInvestmentTotal)", strokeWidth: 2 }}
+                      />
+                      <Line
+                        type="monotone"
                         dataKey="total"
                         stroke="var(--color-total)"
                         strokeWidth={2}
@@ -2731,6 +2659,7 @@ const Dashboard = ({ onLogout, sidebarOpen, onSidebarToggle }: DashboardProps) =
                       <th className="py-2 pr-3 text-right">Investment Accounts</th>
                       <th className="py-2 pr-3 text-right">Bank Accounts</th>
                       <th className="py-2 pr-3 text-right">Other Assets</th>
+                      <th className="py-2 pr-3 text-right">Non-investment Assets</th>
                       <th className="py-2 pr-3 text-right font-bold">Total Assets</th>
                       <th className="py-2 pl-3 text-center">Action</th>
                     </tr>
@@ -2757,6 +2686,9 @@ const Dashboard = ({ onLogout, sidebarOpen, onSidebarToggle }: DashboardProps) =
                         <td className="py-2 pr-3 text-right text-foreground">
                           {formatCurrency(row.otherTotal, baseCurrency)}
                         </td>
+                        <td className="py-2 pr-3 text-right text-foreground">
+                          {formatCurrency(row.nonInvestmentTotal || 0, baseCurrency)}
+                        </td>
                         <td className="py-2 pr-3 text-right font-bold text-foreground">
                           {formatCurrency(row.total, baseCurrency)}
                         </td>
@@ -2774,7 +2706,7 @@ const Dashboard = ({ onLogout, sidebarOpen, onSidebarToggle }: DashboardProps) =
                     ))}
                     {totalAssetsHistory.length === 0 && (
                       <tr>
-                        <td className="py-4 text-center text-muted-foreground" colSpan={6}>
+                        <td className="py-4 text-center text-muted-foreground" colSpan={7}>
                           {isLoadingTotalAssetsHistory ? "Loading history..." : "No recorded snapshots found. Click 'Record Snapshot' above to save the current asset breakdown."}
                         </td>
                       </tr>
@@ -3545,6 +3477,7 @@ const Dashboard = ({ onLogout, sidebarOpen, onSidebarToggle }: DashboardProps) =
               <div>
                 <h1 className="text-2xl md:text-3xl font-bold text-foreground mb-2">
                   {currentView === "overview" && "Dashboard Overview"}
+                  {currentView === "ai-insights" && "AI Portfolio Insights"}
                   {currentView === "accounts" && "Accounts"}
                   {currentView === "currency" && "Currency Exchange"}
                   {currentView === "portfolio" && "Portfolio"}
@@ -3552,6 +3485,7 @@ const Dashboard = ({ onLogout, sidebarOpen, onSidebarToggle }: DashboardProps) =
                 </h1>
                 <p className="text-muted-foreground">
                   {currentView === "overview" && "Monitor your investment performance"}
+                  {currentView === "ai-insights" && "Automated performance analysis by MiniMax M3"}
                   {currentView === "accounts" && "Manage your investment & bank accounts"}
                   {currentView === "currency" && "Track currency exchange rates"}
                   {currentView === "portfolio" && "View all integrated account portfolios in one place"}
@@ -3662,6 +3596,67 @@ const Dashboard = ({ onLogout, sidebarOpen, onSidebarToggle }: DashboardProps) =
           </div>
 
           {currentView === "overview" && renderOverview()}
+          {currentView === "ai-insights" && (
+            <Card className="bg-gradient-card border-border shadow-card">
+              <CardHeader className="flex flex-row items-center justify-between border-b border-border/40 pb-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-primary/10 rounded-lg text-primary">
+                    <Zap className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <CardTitle className="text-foreground">AI Portfolio Analysis Report</CardTitle>
+                    <CardDescription className="flex flex-col sm:flex-row sm:items-center sm:gap-2">
+                      <span>Automated financial analysis by MiniMax M3</span>
+                      {aiFeedbackTimestamp && (
+                        <span className="text-xs text-muted-foreground/75 font-mono">
+                          (Generated: {aiFeedbackTimestamp})
+                        </span>
+                      )}
+                    </CardDescription>
+                  </div>
+                </div>
+                <Button
+                  variant="outline"
+                  className="border-primary text-primary hover:bg-primary/10 flex items-center gap-1.5"
+                  onClick={fetchAIFeedback}
+                  disabled={isLoadingAIFeedback}
+                >
+                  <RefreshCw className={`h-4 w-4 ${isLoadingAIFeedback ? 'animate-spin' : ''}`} />
+                  <span>{aiFeedback ? 'Refresh Report' : 'Generate Report'}</span>
+                </Button>
+              </CardHeader>
+              <CardContent className="p-4 md:p-6">
+                {isLoadingAIFeedback ? (
+                  <div className="space-y-4 py-6 animate-pulse">
+                    <div className="h-4 bg-muted rounded w-1/4"></div>
+                    <div className="h-4 bg-muted rounded w-full"></div>
+                    <div className="h-4 bg-muted rounded w-5/6"></div>
+                    <div className="h-4 bg-muted rounded w-4/5"></div>
+                    <div className="h-4 bg-muted rounded w-full"></div>
+                    <div className="h-4 bg-muted rounded w-3/4"></div>
+                  </div>
+                ) : aiFeedback ? (
+                  <div className="prose prose-invert max-w-none bg-background/10 p-6 rounded-xl border border-border/40 leading-relaxed shadow-sm">
+                    {renderMarkdown(aiFeedback)}
+                  </div>
+                ) : (
+                  <div className="text-center py-16 bg-background/5 rounded-xl border border-dashed border-border/40 max-w-xl mx-auto my-8">
+                    <Zap className="h-12 w-12 text-primary/40 mx-auto mb-4" />
+                    <h3 className="text-lg font-semibold text-foreground mb-2">No Report Generated</h3>
+                    <p className="text-sm text-muted-foreground mb-6 max-w-md mx-auto">
+                      Get automated, high-value financial advice and P&L trends analysis based on your real-time investment accounts, bank accounts, and currency assets.
+                    </p>
+                    <Button
+                      className="bg-gradient-primary hover:opacity-90 px-6"
+                      onClick={fetchAIFeedback}
+                    >
+                      Generate Report
+                    </Button>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
           {currentView === "accounts" && (
             <AccountsView
               accounts={accounts}

@@ -7,6 +7,7 @@ export interface TotalAssetsHistoryData {
   investmentTotal: number;
   bankTotal: number;
   otherTotal: number;
+  nonInvestmentTotal: number;
   total: number;
   createdAt: string;
 }
@@ -16,6 +17,7 @@ export interface CreateTotalAssetsHistoryData {
   investmentTotal: number;
   bankTotal: number;
   otherTotal: number;
+  nonInvestmentTotal: number;
   total: number;
 }
 
@@ -27,6 +29,7 @@ export class TotalAssetsHistoryModel {
         investment_total as investmentTotal, 
         bank_total as bankTotal, 
         other_total as otherTotal, 
+        COALESCE(non_investment_total, 0.0) as nonInvestmentTotal,
         total, 
         created_at as createdAt
       FROM total_assets_history 
@@ -39,6 +42,7 @@ export class TotalAssetsHistoryModel {
   }
   
   static async create(userId: number, data: CreateTotalAssetsHistoryData): Promise<TotalAssetsHistoryData> {
+    const nonInvestmentTotal = data.nonInvestmentTotal !== undefined ? data.nonInvestmentTotal : 0.0;
     // Check if a record already exists for the same user and date
     const existing = await dbGet(
       `SELECT id FROM total_assets_history WHERE user_id = ? AND date = ?`,
@@ -49,9 +53,9 @@ export class TotalAssetsHistoryModel {
       // Update the existing record
       await dbRun(
         `UPDATE total_assets_history 
-         SET investment_total = ?, bank_total = ?, other_total = ?, total = ?
+         SET investment_total = ?, bank_total = ?, other_total = ?, non_investment_total = ?, total = ?
          WHERE id = ?`,
-        [data.investmentTotal, data.bankTotal, data.otherTotal, data.total, (existing as any).id]
+        [data.investmentTotal, data.bankTotal, data.otherTotal, nonInvestmentTotal, data.total, (existing as any).id]
       );
       
       const record = await this.findById((existing as any).id, userId);
@@ -63,9 +67,9 @@ export class TotalAssetsHistoryModel {
       // Insert a new record
       const result = await dbRun(
         `INSERT INTO total_assets_history 
-          (user_id, date, investment_total, bank_total, other_total, total) 
-        VALUES (?, ?, ?, ?, ?, ?)`,
-        [userId, data.date, data.investmentTotal, data.bankTotal, data.otherTotal, data.total]
+          (user_id, date, investment_total, bank_total, other_total, non_investment_total, total) 
+        VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [userId, data.date, data.investmentTotal, data.bankTotal, data.otherTotal, nonInvestmentTotal, data.total]
       );
       
       const record = await this.findById(result.lastID, userId);
@@ -83,6 +87,7 @@ export class TotalAssetsHistoryModel {
         investment_total as investmentTotal, 
         bank_total as bankTotal, 
         other_total as otherTotal, 
+        COALESCE(non_investment_total, 0.0) as nonInvestmentTotal,
         total, 
         created_at as createdAt
       FROM total_assets_history 

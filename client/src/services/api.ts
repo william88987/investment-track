@@ -551,6 +551,7 @@ class ApiClient {
     currency: string;
     originalValue: number;
     marketValue: number;
+    isInvestment?: number;
     remarks: string;
   }) {
     return this.request<any>('/other-assets', {
@@ -565,6 +566,7 @@ class ApiClient {
     currency?: string;
     originalValue?: number;
     marketValue?: number;
+    isInvestment?: number;
     remarks?: string;
   }) {
     return this.request<any>(`/other-assets/${id}`, {
@@ -678,6 +680,7 @@ class ApiClient {
     investmentTotal: number;
     bankTotal: number;
     otherTotal: number;
+    nonInvestmentTotal: number;
     total: number;
   }) {
     return this.request<any>('/total-assets-history', {

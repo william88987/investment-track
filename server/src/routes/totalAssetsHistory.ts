@@ -14,6 +14,7 @@ const createRecordSchema = z.object({
   investmentTotal: z.number(),
   bankTotal: z.number(),
   otherTotal: z.number(),
+  nonInvestmentTotal: z.number().optional().default(0.0),
   total: z.number()
 });
 

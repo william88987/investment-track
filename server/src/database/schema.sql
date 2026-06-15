@@ -108,6 +108,7 @@ CREATE TABLE IF NOT EXISTS other_assets (
   currency TEXT NOT NULL,
   original_value REAL NOT NULL DEFAULT 0,
   market_value REAL NOT NULL DEFAULT 0,
+  is_investment INTEGER DEFAULT 1,
   remarks TEXT DEFAULT '',
   created_at DATETIME DEFAULT (datetime('now', 'localtime')),
   updated_at DATETIME DEFAULT (datetime('now', 'localtime')),
@@ -154,6 +155,7 @@ CREATE TABLE IF NOT EXISTS total_assets_history (
     investment_total REAL NOT NULL,
     bank_total REAL NOT NULL,
     other_total REAL NOT NULL,
+    non_investment_total REAL DEFAULT 0.0,
     total REAL NOT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE

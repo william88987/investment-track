@@ -16,6 +16,10 @@ const createAssetSchema = z.object({
   currency: z.string().min(3).max(3),
   originalValue: z.number().nonnegative(),
   marketValue: z.number().nonnegative(),
+  isInvestment: z.union([z.boolean(), z.number()]).optional().default(true).transform(v => {
+    if (typeof v === 'boolean') return v ? 1 : 0;
+    return v === 0 ? 0 : 1;
+  }),
   remarks: z.string().optional().default('')
 });
 
@@ -25,6 +29,10 @@ const updateAssetSchema = z.object({
   currency: z.string().min(3).max(3).optional(),
   originalValue: z.number().nonnegative().optional(),
   marketValue: z.number().nonnegative().optional(),
+  isInvestment: z.union([z.boolean(), z.number()]).optional().transform(v => {
+    if (typeof v === 'boolean') return v ? 1 : 0;
+    return v === 0 ? 0 : 1;
+  }),
   remarks: z.string().optional()
 });
 
