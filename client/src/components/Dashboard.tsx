@@ -113,7 +113,12 @@ const Dashboard = ({ onLogout, sidebarOpen, onSidebarToggle }: DashboardProps) =
     const saved = localStorage.getItem('show-total-assets-history');
     return saved === 'true';
   });
-  const [aiFeedback, setAiFeedback] = useState<string>("");
+  const [aiFeedback, setAiFeedback] = useState<string>(() => {
+    return localStorage.getItem('ai-portfolio-feedback') || "";
+  });
+  const [aiFeedbackTimestamp, setAiFeedbackTimestamp] = useState<string>(() => {
+    return localStorage.getItem('ai-portfolio-feedback-timestamp') || "";
+  });
   const [isLoadingAIFeedback, setIsLoadingAIFeedback] = useState(false);
   const breakdownsRef = useRef({ currencyBreakdown: [] as any[], categoryBreakdown: [] as any[] });
   // Load QQQ holdings on mount
@@ -310,9 +315,6 @@ const Dashboard = ({ onLogout, sidebarOpen, onSidebarToggle }: DashboardProps) =
 
       // Calculate performance snapshot after all data is loaded
       await handlePostAccountUpdate();
-      
-      // Load AI feedback/insights
-      fetchAIFeedback();
     } catch (error) {
       console.error('Error during comprehensive refresh:', error);
     }
@@ -481,7 +483,18 @@ const Dashboard = ({ onLogout, sidebarOpen, onSidebarToggle }: DashboardProps) =
         categoryBreakdown
       });
       if (response.data?.feedback) {
+        const timestamp = new Date().toLocaleString('en-HK', {
+          year: 'numeric',
+          month: 'short',
+          day: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: false
+        });
         setAiFeedback(response.data.feedback);
+        setAiFeedbackTimestamp(timestamp);
+        localStorage.setItem('ai-portfolio-feedback', response.data.feedback);
+        localStorage.setItem('ai-portfolio-feedback-timestamp', timestamp);
       } else if (response.error) {
         toast({
           title: "AI Feedback Error",
@@ -2338,7 +2351,14 @@ const Dashboard = ({ onLogout, sidebarOpen, onSidebarToggle }: DashboardProps) =
               <Zap className="h-5 w-5 text-primary" />
               <div>
                 <CardTitle className="text-foreground">AI Portfolio Insights</CardTitle>
-                <CardDescription>Automated performance analysis by MiniMax M3</CardDescription>
+                <CardDescription className="flex flex-col sm:flex-row sm:items-center sm:gap-2">
+                  <span>Automated performance analysis by MiniMax M3</span>
+                  {aiFeedbackTimestamp && (
+                    <span className="text-xs text-muted-foreground/75 font-mono">
+                      (Generated: {aiFeedbackTimestamp})
+                    </span>
+                  )}
+                </CardDescription>
               </div>
             </div>
             <Button
