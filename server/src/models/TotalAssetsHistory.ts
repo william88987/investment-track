@@ -39,19 +39,41 @@ export class TotalAssetsHistoryModel {
   }
   
   static async create(userId: number, data: CreateTotalAssetsHistoryData): Promise<TotalAssetsHistoryData> {
-    const result = await dbRun(
-      `INSERT INTO total_assets_history 
-        (user_id, date, investment_total, bank_total, other_total, total) 
-      VALUES (?, ?, ?, ?, ?, ?)`,
-      [userId, data.date, data.investmentTotal, data.bankTotal, data.otherTotal, data.total]
+    // Check if a record already exists for the same user and date
+    const existing = await dbGet(
+      `SELECT id FROM total_assets_history WHERE user_id = ? AND date = ?`,
+      [userId, data.date]
     );
-    
-    const record = await this.findById(result.lastID, userId);
-    if (!record) {
-      throw new Error('Failed to create total assets history record');
+
+    if (existing) {
+      // Update the existing record
+      await dbRun(
+        `UPDATE total_assets_history 
+         SET investment_total = ?, bank_total = ?, other_total = ?, total = ?
+         WHERE id = ?`,
+        [data.investmentTotal, data.bankTotal, data.otherTotal, data.total, (existing as any).id]
+      );
+      
+      const record = await this.findById((existing as any).id, userId);
+      if (!record) {
+        throw new Error('Failed to update total assets history record');
+      }
+      return record;
+    } else {
+      // Insert a new record
+      const result = await dbRun(
+        `INSERT INTO total_assets_history 
+          (user_id, date, investment_total, bank_total, other_total, total) 
+        VALUES (?, ?, ?, ?, ?, ?)`,
+        [userId, data.date, data.investmentTotal, data.bankTotal, data.otherTotal, data.total]
+      );
+      
+      const record = await this.findById(result.lastID, userId);
+      if (!record) {
+        throw new Error('Failed to create total assets history record');
+      }
+      return record;
     }
-    
-    return record;
   }
   
   static async findById(id: number, userId: number): Promise<TotalAssetsHistoryData | null> {
