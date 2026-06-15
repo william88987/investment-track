@@ -1,6 +1,8 @@
 import express from 'express';
 import { z } from 'zod';
+import axios from 'axios';
 import { PerformanceModel, CreatePerformanceData } from '../models/Performance.js';
+import { TotalAssetsHistoryModel } from '../models/TotalAssetsHistory.js';
 import { PerformanceHistoryService } from '../services/performanceHistoryService.js';
 import { SchedulerService } from '../services/schedulerService.js';
 import { authenticateToken, AuthenticatedRequest } from '../middleware/auth.js';
@@ -159,6 +161,71 @@ router.get('/scheduler-status', async (req: AuthenticatedRequest, res) => {
   } catch (error) {
     Logger.error('Get scheduler status error:', error);
     return res.status(500).json({ error: 'Failed to get scheduler status' });
+  }
+});
+
+// Get AI feedback on performance and assets
+router.get('/ai-feedback', async (req: AuthenticatedRequest, res) => {
+  try {
+    const userId = req.user?.id || 0;
+    const apiKey = process.env.MINIMAX_API_KEY;
+    const envPrompt = process.env.MINIMAX_PROMPT || "My investment performance in the past month and the change of my total assets";
+
+    if (!apiKey || apiKey.trim() === '') {
+      return res.json({ 
+        feedback: "MiniMax AI feedback is currently unavailable because the `MINIMAX_API_KEY` is not set in the server's `.env` file. Please add your key to enable automated financial insights." 
+      });
+    }
+
+    // Fetch last 30 days of performance data
+    const performanceData = await PerformanceModel.findByUserId(userId, 30);
+    const sortedPerformance = [...performanceData].reverse();
+
+    // Fetch total assets history snapshots
+    const totalAssetsHistory = await TotalAssetsHistoryModel.findByUserId(userId);
+    const last30Snapshots = totalAssetsHistory.slice(0, 30);
+    const sortedSnapshots = [...last30Snapshots].reverse();
+
+    // Format data for prompt
+    const formattedPerformance = sortedPerformance.map(p => 
+      `- Date: ${p.date} | Total P&L: ${p.totalPL} | Investment P&L: ${p.investmentPL} | Currency P&L: ${p.currencyPL} | Daily P&L: ${p.dailyPL}`
+    ).join('\n');
+
+    const formattedSnapshots = sortedSnapshots.map(s => 
+      `- Date: ${s.date} | Investment: ${s.investmentTotal} | Bank: ${s.bankTotal} | Other: ${s.otherTotal} | Total: ${s.total}`
+    ).join('\n');
+
+    const prompt = `You are a professional financial advisor analyzing the user's investment portfolio. 
+Based on the financial data provided below, analyze: "${envPrompt}"
+
+Format your response in Markdown, using clean headers, bullet points, and highlight trends clearly. Keep it concise, helpful, and under 250 words.
+
+--- PERFORMANCE HISTORY (PAST 30 ENTRIES) ---
+${formattedPerformance || 'No performance history records available.'}
+
+--- TOTAL ASSETS HISTORY (PAST 30 ENTRIES) ---
+${formattedSnapshots || 'No total assets history snapshots available.'}
+`;
+
+    // Call MiniMax Chat Completion API (v1 OpenAI-compatible endpoint)
+    const response = await axios.post('https://api.minimax.io/v1/chat/completions', {
+      model: 'MiniMax-M3',
+      messages: [
+        { role: 'user', content: prompt }
+      ]
+    }, {
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    const content = response.data?.choices?.[0]?.message?.content || 'No insights could be generated at this time.';
+
+    return res.json({ feedback: content });
+  } catch (error) {
+    Logger.error('AI feedback error:', error);
+    return res.status(500).json({ error: 'Failed to generate AI feedback' });
   }
 });
 

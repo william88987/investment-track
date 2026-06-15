@@ -113,7 +113,8 @@ const Dashboard = ({ onLogout, sidebarOpen, onSidebarToggle }: DashboardProps) =
     const saved = localStorage.getItem('show-total-assets-history');
     return saved === 'true';
   });
-
+  const [aiFeedback, setAiFeedback] = useState<string>("");
+  const [isLoadingAIFeedback, setIsLoadingAIFeedback] = useState(false);
   // Load QQQ holdings on mount
   useEffect(() => {
     const loadQQQ = async () => {
@@ -308,6 +309,9 @@ const Dashboard = ({ onLogout, sidebarOpen, onSidebarToggle }: DashboardProps) =
 
       // Calculate performance snapshot after all data is loaded
       await handlePostAccountUpdate();
+      
+      // Load AI feedback/insights
+      fetchAIFeedback();
     } catch (error) {
       console.error('Error during comprehensive refresh:', error);
     }
@@ -464,6 +468,80 @@ const Dashboard = ({ onLogout, sidebarOpen, onSidebarToggle }: DashboardProps) =
     const nextVal = !showTotalAssetsHistory;
     setShowTotalAssetsHistory(nextVal);
     localStorage.setItem('show-total-assets-history', nextVal.toString());
+  };
+
+  // Fetch AI feedback from the server
+  const fetchAIFeedback = async () => {
+    setIsLoadingAIFeedback(true);
+    try {
+      const response = await apiClient.getAIPortfolioFeedback();
+      if (response.data?.feedback) {
+        setAiFeedback(response.data.feedback);
+      } else if (response.error) {
+        toast({
+          title: "AI Feedback Error",
+          description: response.error,
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      console.error('Error fetching AI feedback:', error);
+      toast({
+        title: "AI Feedback Error",
+        description: "Failed to load AI financial insights.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoadingAIFeedback(false);
+    }
+  };
+
+  // Helper to render basic markdown formatting to JSX
+  const renderMarkdown = (text: string) => {
+    if (!text) return null;
+    
+    return text.split('\n').map((line, idx) => {
+      const trimmed = line.trim();
+      
+      // Headers
+      if (trimmed.startsWith('###')) {
+        return <h4 key={idx} className="text-base font-bold text-foreground mt-3 mb-1">{trimmed.replace(/^###\s*/, '')}</h4>;
+      }
+      if (trimmed.startsWith('##')) {
+        return <h3 key={idx} className="text-lg font-bold text-foreground mt-4 mb-2">{trimmed.replace(/^##\s*/, '')}</h3>;
+      }
+      if (trimmed.startsWith('#')) {
+        return <h2 key={idx} className="text-xl font-bold text-foreground mt-4 mb-2">{trimmed.replace(/^#\s*/, '')}</h2>;
+      }
+      
+      // Bullet points
+      if (trimmed.startsWith('-') || trimmed.startsWith('*')) {
+        const content = trimmed.replace(/^[-*]\s*/, '');
+        return (
+          <ul key={idx} className="list-disc pl-5 my-1 text-sm text-muted-foreground">
+            <li>{parseBoldText(content)}</li>
+          </ul>
+        );
+      }
+      
+      // Blank lines
+      if (trimmed === '') {
+        return <div key={idx} className="h-2" />;
+      }
+      
+      // Regular paragraphs
+      return <p key={idx} className="text-sm text-muted-foreground my-1.5 leading-relaxed">{parseBoldText(trimmed)}</p>;
+    });
+  };
+
+  const parseBoldText = (text: string) => {
+    const parts = text.split(/(\*\*.*?\*\*)/g);
+    return parts.map((part, i) => {
+      if (part.startsWith('**') && part.endsWith('**')) {
+        return <strong key={i} className="font-semibold text-foreground">{part.slice(2, -2)}</strong>;
+      }
+      return part;
+    });
   };
 
   // Reset page when performance data or days filter changes
@@ -2135,6 +2213,57 @@ const Dashboard = ({ onLogout, sidebarOpen, onSidebarToggle }: DashboardProps) =
               )}
             </CardContent>
           )}
+        </Card>
+
+        {/* AI Financial Insights */}
+        <Card className="bg-gradient-card border-border shadow-card mt-6">
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <div className="flex items-center gap-2">
+              <Zap className="h-5 w-5 text-primary" />
+              <div>
+                <CardTitle className="text-foreground">AI Portfolio Insights</CardTitle>
+                <CardDescription>Automated performance analysis by MiniMax M3</CardDescription>
+              </div>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              className="border-primary text-primary hover:bg-primary/10 flex items-center gap-1.5"
+              onClick={fetchAIFeedback}
+              disabled={isLoadingAIFeedback}
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${isLoadingAIFeedback ? 'animate-spin' : ''}`} />
+              <span>{aiFeedback ? 'Refresh Insights' : 'Generate Insights'}</span>
+            </Button>
+          </CardHeader>
+          <CardContent className="p-4 md:p-6 pt-0">
+            {isLoadingAIFeedback ? (
+              <div className="space-y-3 py-2 animate-pulse">
+                <div className="h-4 bg-muted rounded w-1/4"></div>
+                <div className="h-4 bg-muted rounded w-full"></div>
+                <div className="h-4 bg-muted rounded w-5/6"></div>
+                <div className="h-4 bg-muted rounded w-4/5"></div>
+              </div>
+            ) : aiFeedback ? (
+              <div className="prose prose-invert max-w-none bg-background/20 p-4 rounded-lg border border-border/30">
+                {renderMarkdown(aiFeedback)}
+              </div>
+            ) : (
+              <div className="text-center py-6 bg-background/10 rounded-lg border border-dashed border-border/30">
+                <p className="text-sm text-muted-foreground mb-3">
+                  Get professional analysis of your investment performance and total asset changes.
+                </p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="border-primary/50 text-primary hover:bg-primary/10"
+                  onClick={fetchAIFeedback}
+                >
+                  Generate Insights
+                </Button>
+              </div>
+            )}
+          </CardContent>
         </Card>
 
         {/* Profit/Loss Breakdown */}

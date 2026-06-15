@@ -691,6 +691,11 @@ class ApiClient {
       method: 'DELETE',
     });
   }
+
+  // AI Feedback endpoint
+  async getAIPortfolioFeedback() {
+    return this.request<{ feedback: string }>('/performance/ai-feedback');
+  }
 }
 
 export const apiClient = new ApiClient(API_BASE_URL);
