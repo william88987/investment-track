@@ -1525,6 +1525,7 @@ const Dashboard = ({ onLogout, sidebarOpen, onSidebarToggle }: DashboardProps) =
   const renderOverview = () => {
     const summaryData = calculateSummaryData();
     const { portfolioChartData, currencyChartData } = calculatePortfolioAndCurrencyBreakdowns();
+    const totalValue = currencyChartData.reduce((sum, item) => sum + item.valueHKD, 0);
 
     // Define colors for portfolio categories
     const portfolioColors = [
