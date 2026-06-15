@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ChartContainer, ChartTooltip, ChartTooltipContent, ChartLegend, ChartLegendContent } from "@/components/ui/chart";
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, ResponsiveContainer, PieChart, Pie, Cell, BarChart, Bar, ReferenceLine, Tooltip as RechartsTooltip } from "recharts";
+import { ComposedChart, LineChart, Line, XAxis, YAxis, CartesianGrid, ResponsiveContainer, PieChart, Pie, Cell, BarChart, Bar, ReferenceLine, Tooltip as RechartsTooltip } from "recharts";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -1766,17 +1766,17 @@ const Dashboard = ({ onLogout, sidebarOpen, onSidebarToggle }: DashboardProps) =
                       type="monotone"
                       dataKey="totalPL"
                       stroke="var(--color-totalPL)"
-                      strokeWidth={window.innerWidth < 768 ? 1.5 : 2}
-                      dot={{ r: window.innerWidth < 768 ? 2 : 3, fill: "var(--color-totalPL)" }}
-                      activeDot={{ r: window.innerWidth < 768 ? 3 : 4, stroke: "var(--color-totalPL)", strokeWidth: 2 }}
+                      strokeWidth={2}
+                      dot={false}
+                      activeDot={{ r: 4, stroke: "var(--color-totalPL)", strokeWidth: 2 }}
                     />
                     <Line
                       type="monotone"
                       dataKey="investmentPL"
                       stroke="var(--color-investmentPL)"
-                      strokeWidth={window.innerWidth < 768 ? 1.5 : 2}
-                      dot={{ r: window.innerWidth < 768 ? 1.5 : 2, fill: "var(--color-investmentPL)" }}
-                      activeDot={{ r: window.innerWidth < 768 ? 2.5 : 3, stroke: "var(--color-investmentPL)", strokeWidth: 2 }}
+                      strokeWidth={2}
+                      dot={false}
+                      activeDot={{ r: 4, stroke: "var(--color-investmentPL)", strokeWidth: 2 }}
                     />
                   </LineChart>
                 </ChartContainer>
@@ -1789,7 +1789,7 @@ const Dashboard = ({ onLogout, sidebarOpen, onSidebarToggle }: DashboardProps) =
                   <p className="text-xs text-muted-foreground">Cumulative FX return vs daily short-term P&L</p>
                 </div>
                 <ChartContainer config={chartConfig} className="h-[250px] md:h-[350px] w-full" key={`chart-currency-daily-${performanceDays}-${chartData.length}`}>
-                  <LineChart
+                  <ComposedChart
                     data={chartData}
                     margin={{
                       top: 10,
@@ -1837,6 +1837,7 @@ const Dashboard = ({ onLogout, sidebarOpen, onSidebarToggle }: DashboardProps) =
                       axisLine={false}
                       tickLine={false}
                     />
+                    <ReferenceLine y={0} stroke="hsl(var(--border))" strokeWidth={1} opacity={0.5} />
                     <ChartTooltip
                       content={({ active, payload, label }) => {
                         if (active && payload && payload.length) {
@@ -1891,24 +1892,28 @@ const Dashboard = ({ onLogout, sidebarOpen, onSidebarToggle }: DashboardProps) =
                       content={<ChartLegendContent className="text-[10px] md:text-xs flex-wrap" />}
                       wrapperStyle={{ paddingTop: '10px' }}
                     />
+                    <Bar dataKey="dailyPL" radius={[2, 2, 0, 0]}>
+                      {chartData.map((entry, index) => {
+                        const val = Number(entry.dailyPL || 0);
+                        const isPositive = val >= 0;
+                        return (
+                          <Cell
+                            key={`cell-${index}`}
+                            fill={isPositive ? "hsl(var(--profit))" : "hsl(var(--loss))"}
+                            opacity={0.35}
+                          />
+                        );
+                      })}
+                    </Bar>
                     <Line
                       type="monotone"
                       dataKey="currencyPL"
                       stroke="var(--color-currencyPL)"
-                      strokeWidth={window.innerWidth < 768 ? 1.5 : 2}
-                      dot={{ r: window.innerWidth < 768 ? 1.5 : 2, fill: "var(--color-currencyPL)" }}
-                      activeDot={{ r: window.innerWidth < 768 ? 2.5 : 3, stroke: "var(--color-currencyPL)", strokeWidth: 2 }}
+                      strokeWidth={2}
+                      dot={false}
+                      activeDot={{ r: 4, stroke: "var(--color-currencyPL)", strokeWidth: 2 }}
                     />
-                    <Line
-                      type="monotone"
-                      dataKey="dailyPL"
-                      stroke="var(--color-dailyPL)"
-                      strokeWidth={window.innerWidth < 768 ? 1.5 : 2}
-                      dot={{ r: window.innerWidth < 768 ? 1.5 : 2, fill: "var(--color-dailyPL)" }}
-                      activeDot={{ r: window.innerWidth < 768 ? 2.5 : 3, stroke: "var(--color-dailyPL)", strokeWidth: 2 }}
-                      strokeDasharray="3 3"
-                    />
-                  </LineChart>
+                  </ComposedChart>
                 </ChartContainer>
               </div>
             </div>
