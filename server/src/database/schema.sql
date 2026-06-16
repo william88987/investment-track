@@ -163,3 +163,14 @@ CREATE TABLE IF NOT EXISTS total_assets_history (
 
 CREATE INDEX IF NOT EXISTS idx_total_assets_history_user_id ON total_assets_history(user_id);
 CREATE INDEX IF NOT EXISTS idx_total_assets_history_date ON total_assets_history(date);
+
+-- User AI insights table (caching MiniMax reports on server)
+CREATE TABLE IF NOT EXISTS user_ai_insights (
+    user_id INTEGER PRIMARY KEY,
+    feedback TEXT NOT NULL,
+    generated_at TEXT NOT NULL,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_ai_insights_user_id ON user_ai_insights(user_id);

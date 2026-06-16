@@ -114,12 +114,8 @@ const Dashboard = ({ onLogout, sidebarOpen, onSidebarToggle }: DashboardProps) =
     const saved = localStorage.getItem('show-total-assets-history');
     return saved === 'true';
   });
-  const [aiFeedback, setAiFeedback] = useState<string>(() => {
-    return localStorage.getItem('ai-portfolio-feedback') || "";
-  });
-  const [aiFeedbackTimestamp, setAiFeedbackTimestamp] = useState<string>(() => {
-    return localStorage.getItem('ai-portfolio-feedback-timestamp') || "";
-  });
+  const [aiFeedback, setAiFeedback] = useState<string>("");
+  const [aiFeedbackTimestamp, setAiFeedbackTimestamp] = useState<string>("");
   const [isLoadingAIFeedback, setIsLoadingAIFeedback] = useState(false);
   const breakdownsRef = useRef({ currencyBreakdown: [] as any[], categoryBreakdown: [] as any[] });
   // Load QQQ holdings on mount
@@ -311,7 +307,8 @@ const Dashboard = ({ onLogout, sidebarOpen, onSidebarToggle }: DashboardProps) =
         loadOtherPortfolio(),
         loadOtherCashBalances(),
         loadIntegratedAccountsData(),
-        loadTotalAssetsHistory()
+        loadTotalAssetsHistory(),
+        loadSavedAIFeedback()
       ]);
 
       // Calculate performance snapshot after all data is loaded
@@ -349,7 +346,8 @@ const Dashboard = ({ onLogout, sidebarOpen, onSidebarToggle }: DashboardProps) =
           loadOtherPortfolio(),
           loadOtherCashBalances(),
           loadIntegratedAccountsData(),
-          loadTotalAssetsHistory()
+          loadTotalAssetsHistory(),
+          loadSavedAIFeedback()
         ]);
       }
     }
@@ -366,6 +364,19 @@ const Dashboard = ({ onLogout, sidebarOpen, onSidebarToggle }: DashboardProps) =
     integratedAccountsPortfolio, integratedAccountsCash, baseCurrency, user]);
 
   // Removed auto-refresh functionality - users can manually refresh from Currency Exchange page
+
+  // Load saved AI feedback from the server
+  const loadSavedAIFeedback = async () => {
+    try {
+      const response = await apiClient.getSavedAIPortfolioFeedback();
+      if (response.data) {
+        setAiFeedback(response.data.feedback || "");
+        setAiFeedbackTimestamp(response.data.generatedAt || "");
+      }
+    } catch (error) {
+      console.error('Error loading saved AI feedback:', error);
+    }
+  };
 
   // Load performance history function
   const loadPerformanceHistory = async () => {
@@ -496,18 +507,8 @@ const Dashboard = ({ onLogout, sidebarOpen, onSidebarToggle }: DashboardProps) =
         categoryBreakdown
       });
       if (response.data?.feedback) {
-        const timestamp = new Date().toLocaleString('en-HK', {
-          year: 'numeric',
-          month: 'short',
-          day: 'numeric',
-          hour: '2-digit',
-          minute: '2-digit',
-          hour12: false
-        });
         setAiFeedback(response.data.feedback);
-        setAiFeedbackTimestamp(timestamp);
-        localStorage.setItem('ai-portfolio-feedback', response.data.feedback);
-        localStorage.setItem('ai-portfolio-feedback-timestamp', timestamp);
+        setAiFeedbackTimestamp(response.data.generatedAt || "");
       } else if (response.error) {
         toast({
           title: "AI Feedback Error",

@@ -695,9 +695,15 @@ class ApiClient {
     });
   }
 
-  // AI Feedback endpoint
+  // AI Feedback endpoints
+  async getSavedAIPortfolioFeedback() {
+    return this.request<{ feedback: string | null; generatedAt: string | null }>('/performance/ai-feedback', {
+      method: 'GET',
+    });
+  }
+
   async getAIPortfolioFeedback(data: { currencyBreakdown: any[]; categoryBreakdown: any[] }) {
-    return this.request<{ feedback: string }>('/performance/ai-feedback', {
+    return this.request<{ feedback: string; generatedAt: string }>('/performance/ai-feedback', {
       method: 'POST',
       body: JSON.stringify(data)
     });

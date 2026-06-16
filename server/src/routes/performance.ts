@@ -4,6 +4,7 @@ import axios from 'axios';
 import { PerformanceModel, CreatePerformanceData } from '../models/Performance.js';
 import { TotalAssetsHistoryModel } from '../models/TotalAssetsHistory.js';
 import { PerformanceHistoryService } from '../services/performanceHistoryService.js';
+import { UserAIInsightModel } from '../models/UserAIInsight.js';
 import { SchedulerService } from '../services/schedulerService.js';
 import { authenticateToken, AuthenticatedRequest } from '../middleware/auth.js';
 import { Logger } from '../utils/logger.js';
@@ -164,7 +165,22 @@ router.get('/scheduler-status', async (req: AuthenticatedRequest, res) => {
   }
 });
 
-// Get AI feedback on performance and assets
+// Get saved AI feedback on performance and assets
+router.get('/ai-feedback', async (req: AuthenticatedRequest, res) => {
+  try {
+    const userId = req.user?.id || 0;
+    const insight = await UserAIInsightModel.findByUserId(userId);
+    if (!insight) {
+      return res.json({ feedback: null, generatedAt: null });
+    }
+    return res.json({ feedback: insight.feedback, generatedAt: insight.generatedAt });
+  } catch (error) {
+    Logger.error('Get saved AI feedback error:', error);
+    return res.status(500).json({ error: 'Failed to get saved AI feedback' });
+  }
+});
+
+// Generate and get AI feedback on performance and assets
 router.post('/ai-feedback', async (req: AuthenticatedRequest, res) => {
   try {
     const userId = req.user?.id || 0;
@@ -248,7 +264,20 @@ ${formattedSnapshots || 'No total assets history snapshots available.'}
     // Clean thinking process tags (e.g. <think>...</think>) from the MiniMax output
     content = content.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
 
-    return res.json({ feedback: content });
+    // Generate server-side timestamp in en-HK locale format
+    const generatedAt = new Date().toLocaleString('en-HK', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false
+    });
+
+    // Save report to database
+    await UserAIInsightModel.save(userId, content, generatedAt);
+
+    return res.json({ feedback: content, generatedAt });
   } catch (error) {
     Logger.error('AI feedback error:', error);
     return res.status(500).json({ error: 'Failed to generate AI feedback' });
